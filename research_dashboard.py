@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import altair as alt
+from io import BytesIO
 
 # -------------------- SETUP -------------------- #
 st.set_page_config(page_title="Research Dashboard", layout="wide")
@@ -56,6 +57,13 @@ def upload_file(uploaded_file, folder):
         return uploaded_file.name
     return ""
 
+def get_excel_download(df, filename):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
+    return output
+
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
     "📄 Journal Publications",
@@ -96,8 +104,11 @@ with tabs[0]:
 
     st.markdown("### 📋 Submitted Journal Entries")
     st.dataframe(df)
+    if not df.empty:
+        excel_file = get_excel_download(df, f"journals_{year}.xlsx")
+        st.download_button("📥 Download as Excel", data=excel_file, file_name=f"journals_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# Placeholder for other tabs to be implemented in the next update
+# Placeholders for other tabs
 with tabs[1]:
     st.subheader("📁 Research Projects")
     st.info("Form under development. Coming up in next update!")
@@ -127,6 +138,8 @@ with tabs[5]:
             st.markdown("**📄 Journal Publications**")
             df_journal = pd.read_csv(journal_path)
             st.dataframe(df_journal)
+            excel_dl = get_excel_download(df_journal, f"journals_{year}.xlsx")
+            st.download_button("📥 Download Journal Publications", data=excel_dl, file_name=f"journals_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             chart = alt.Chart(df_journal).mark_bar().encode(
                 x="Status",
                 y="count()",
@@ -141,6 +154,8 @@ with tabs[5]:
             st.markdown("**📁 Research Projects**")
             df_research = pd.read_csv(res_path)
             st.dataframe(df_research)
+            excel_dl = get_excel_download(df_research, f"research_{year}.xlsx")
+            st.download_button("📥 Download Research Projects", data=excel_dl, file_name=f"research_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             chart = alt.Chart(df_research).mark_bar().encode(
                 x="Status",
                 y="count()",
@@ -155,6 +170,8 @@ with tabs[5]:
             st.markdown("**💼 Consultancy Projects**")
             df_consult = pd.read_csv(con_path)
             st.dataframe(df_consult)
+            excel_dl = get_excel_download(df_consult, f"consultancy_{year}.xlsx")
+            st.download_button("📥 Download Consultancy Projects", data=excel_dl, file_name=f"consultancy_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             chart = alt.Chart(df_consult).mark_bar().encode(
                 x="Status",
                 y="count()",
@@ -169,6 +186,8 @@ with tabs[5]:
             st.markdown("**🧠 Patents**")
             df_patents = pd.read_csv(pt_path)
             st.dataframe(df_patents)
+            excel_dl = get_excel_download(df_patents, f"patents_{year}.xlsx")
+            st.download_button("📥 Download Patents", data=excel_dl, file_name=f"patents_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             chart = alt.Chart(df_patents).mark_bar().encode(
                 x="Status",
                 y="count()",
@@ -183,6 +202,8 @@ with tabs[5]:
             st.markdown("**🚀 Project Ideas**")
             df_ideas = pd.read_csv(idea_path)
             st.dataframe(df_ideas)
+            excel_dl = get_excel_download(df_ideas, f"project_ideas_{year}.xlsx")
+            st.download_button("📥 Download Project Ideas", data=excel_dl, file_name=f"project_ideas_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             chart = alt.Chart(df_ideas).mark_bar().encode(
                 x="Status",
                 y="count()",
