@@ -31,6 +31,7 @@ for path in upload_dirs.values():
 
 # Faculty List
 faculty_list = [
+    "Prof. Dr. Yuvaraj L. Bhirud",
     "Prof. Dr. Satish B. Patil",
     "Prof. Abhijeet A. Galatage",
     "Prof. Dr. Rajshekhar G. Rathod",
