@@ -8,10 +8,10 @@ from io import BytesIO
 
 # -------------------- SETUP -------------------- #
 st.set_page_config(page_title="Research Dashboard", layout="wide")
-st.title("🎓 Civil Engineering Research Dashboard")
+st.title("\U0001F393 Civil Engineering Research Dashboard")
 
 # Admin access control
-admin_password = st.sidebar.text_input("🔐 Admin Password (for edit access)", type="password")
+admin_password = st.sidebar.text_input("\U0001F512 Admin Password (for edit access)", type="password")
 is_admin = admin_password == "mitresearch2025"
 
 # Academic Year Options
@@ -24,6 +24,7 @@ upload_dirs = {
     "research": "uploads/research/",
     "consultancy": "uploads/consultancy/",
     "patent": "uploads/patents/",
+    "ideas": "uploads/ideas/"
 }
 for path in upload_dirs.values():
     os.makedirs(path, exist_ok=True)
@@ -66,150 +67,216 @@ def get_excel_download(df, filename):
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
-    "📄 Journal Publications",
-    "📁 Research Projects",
-    "💼 Consultancy Projects",
-    "🧠 Patents",
-    "🚀 Project Ideas",
-    "📊 Department Dashboard"
+    "\U0001F4C4 Journal Publications",
+    "\U0001F4C1 Research Projects",
+    "\U0001F4BC Consultancy Projects",
+    "\U0001F9E0 Patents",
+    "\U0001F680 Project Ideas",
+    "\U0001F4CA Department Dashboard"
 ])
 
-# 1. JOURNAL PUBLICATIONS TAB
+# 1. JOURNAL PUBLICATION TAB
 with tabs[0]:
     st.subheader("📄 Journal Publications")
-    year = st.selectbox("Select Academic Year", academic_years, index=2, key="journal_year")
-    filename = f"data/journals_{year}.csv"
-    df = load_data(filename)
-
+    st.markdown("Enter details of your journal papers below.")
     with st.form("journal_form"):
-        col1, col2 = st.columns(2)
-        faculty = col1.selectbox("Faculty Name", faculty_list)
-        journal_name = col2.text_input("Journal Name")
-        col3, col4 = st.columns(2)
-        indexing = col3.selectbox("Indexing", ["Scopus", "SCI", "WoS", "Non-Indexed"])
-        status = col4.selectbox("Status", ["Started Writing", "Writing Completed", "Journal Identified", "Manuscript Submitted", "Under Process", "Under Review", "Published"])
-        col5, col6 = st.columns(2)
-        doi = col5.text_input("DOI Number")
-        issn = col6.text_input("ISSN Number")
-        first_page = st.file_uploader("Upload First Page PDF", type=["pdf"])
+        year = st.selectbox("Academic Year", academic_years, index=2)
+        faculty = st.selectbox("Faculty Name", faculty_list)
+        journal_name = st.text_input("Journal Name")
+        indexing = st.selectbox("Indexing", ["Scopus", "SCI", "WoS", "Non-Scopus"])
+        doi = st.text_input("DOI Number")
+        issn = st.text_input("ISSN Number")
+        status = st.selectbox("Publication Status", [
+            "Started Writing", "Writing Completed", "Journal Identified", "Manuscript Submitted",
+            "Under Process", "Under Review", "Published"
+        ])
+        pdf_file = st.file_uploader("Upload First Page PDF", type=["pdf"])
+        submit = st.form_submit_button("Submit")
 
-        submitted = st.form_submit_button("Submit")
-        if submitted:
-            file_uploaded = upload_file(first_page, "journal") if first_page else ""
-            new_entry = pd.DataFrame([[faculty, journal_name, indexing, status, doi, issn, file_uploaded]],
-                                      columns=["Faculty", "Journal Name", "Indexing", "Status", "DOI", "ISSN", "First Page PDF"])
-            df = pd.concat([df, new_entry], ignore_index=True)
+        if submit:
+            filename = f"data/journals_{year}.csv"
+            df = load_data(filename)
+            new_row = pd.DataFrame.from_dict([{
+                "Faculty": faculty,
+                "Journal": journal_name,
+                "Indexing": indexing,
+                "DOI": doi,
+                "ISSN": issn,
+                "Status": status,
+                "PDF": upload_file(pdf_file, "journal")
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
             save_data(df, filename)
-            st.success("Journal entry submitted.")
+            st.success("Journal entry added successfully!")
 
-    st.markdown("### 📋 Submitted Journal Entries")
-    st.dataframe(df)
-    if not df.empty:
-        excel_file = get_excel_download(df, f"journals_{year}.xlsx")
-        st.download_button("📥 Download as Excel", data=excel_file, file_name=f"journals_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# Placeholders for other tabs
+# 2. RESEARCH PROJECT TAB
 with tabs[1]:
     st.subheader("📁 Research Projects")
-    st.info("Form under development. Coming up in next update!")
+    st.markdown("Enter research project details.")
+    with st.form("research_form"):
+        year = st.selectbox("Academic Year", academic_years, index=2, key="research_year")
+        faculty = st.selectbox("Faculty Name", faculty_list, key="research_faculty")
+        project_title = st.text_input("Project Title")
+        submitted_to = st.text_input("Submitted to (Organization/Agency)")
+        status = st.selectbox("Project Status", ["Submitted", "Approved", "Scanned", "In Process", "Completed"])
+        upload_file_proj = st.file_uploader("Upload Project File (if any)", type=["pdf", "docx"])
+        submit = st.form_submit_button("Submit Project")
 
+        if submit:
+            filename = f"data/research_{year}.csv"
+            df = load_data(filename)
+            new_row = pd.DataFrame.from_dict([{
+                "Faculty": faculty,
+                "Project Title": project_title,
+                "Submitted To": submitted_to,
+                "Status": status,
+                "File": upload_file(upload_file_proj, "research")
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+            save_data(df, filename)
+            st.success("Research project submitted.")
+
+# 3. CONSULTANCY PROJECT TAB
 with tabs[2]:
     st.subheader("💼 Consultancy Projects")
-    st.info("Form under development. Coming up in next update!")
+    st.markdown("Enter consultancy project details.")
+    with st.form("consultancy_form"):
+        year = st.selectbox("Academic Year", academic_years, index=2, key="cons_year")
+        faculty = st.selectbox("Faculty Name", faculty_list, key="cons_faculty")
+        project_title = st.text_input("Project Title")
+        client = st.text_input("Client/Industry/Organization")
+        status = st.selectbox("Status", ["Started", "In Progress", "Documentation", "Completed"])
+        cost = st.number_input("Project Cost (in ₹)", min_value=0)
+        upload_file_cons = st.file_uploader("Upload File (if any)", type=["pdf", "docx"])
+        submit = st.form_submit_button("Submit Consultancy")
 
+        if submit:
+            filename = f"data/consultancy_{year}.csv"
+            df = load_data(filename)
+            new_row = pd.DataFrame.from_dict([{
+                "Faculty": faculty,
+                "Project Title": project_title,
+                "Client": client,
+                "Status": status,
+                "Cost": cost,
+                "File": upload_file(upload_file_cons, "consultancy")
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+            save_data(df, filename)
+            st.success("Consultancy project entry added.")
+
+# 4. PATENTS TAB
 with tabs[3]:
     st.subheader("🧠 Patents")
-    st.info("Form under development. Coming up in next update!")
+    st.markdown("Enter patent details.")
+    with st.form("patent_form"):
+        year = st.selectbox("Academic Year", academic_years, index=2, key="patent_year")
+        faculty = st.selectbox("Faculty Name", faculty_list, key="patent_faculty")
+        title = st.text_input("Patent Title")
+        status = st.selectbox("Status", ["Filed", "Published", "Granted", "Under Process"])
+        domain = st.text_input("Technical Domain")
+        file_upload = st.file_uploader("Upload Patent File (if any)", type=["pdf"])
+        submit = st.form_submit_button("Submit Patent")
 
+        if submit:
+            filename = f"data/patents_{year}.csv"
+            df = load_data(filename)
+            new_row = pd.DataFrame.from_dict([{
+                "Faculty": faculty,
+                "Title": title,
+                "Domain": domain,
+                "Status": status,
+                "File": upload_file(file_upload, "patent")
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+            save_data(df, filename)
+            st.success("Patent entry submitted.")
+
+# 5. PROJECT IDEAS TAB
 with tabs[4]:
     st.subheader("🚀 Project Ideas")
-    st.info("Form under development. Coming up in next update!")
+    st.markdown("Enter new or ongoing research/project ideas.")
+    with st.form("idea_form"):
+        year = st.selectbox("Academic Year", academic_years, index=2, key="idea_year")
+        faculty = st.selectbox("Faculty Name", faculty_list, key="idea_faculty")
+        idea = st.text_area("Project Idea Title")
+        status = st.selectbox("Status", ["Idea", "Started", "Given to Student"])
+        assigned_to = st.selectbox("Assigned To (if any)", ["", "S.Y", "T.Y", "F.Y", "M.Tech - Structural", "M.Tech - Transportation", "Ph.D"])
+        submit = st.form_submit_button("Submit Idea")
 
-# 6. DEPARTMENT-WIDE DASHBOARD
+        if submit:
+            filename = f"data/ideas_{year}.csv"
+            df = load_data(filename)
+            new_row = pd.DataFrame.from_dict([{
+                "Faculty": faculty,
+                "Idea": idea,
+                "Status": status,
+                "Assigned To": assigned_to
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+            save_data(df, filename)
+            st.success("Project idea submitted.")
+
+# 6. DEPARTMENT DASHBOARD TAB
 with tabs[5]:
     st.subheader("📊 Department-Wide Research Overview")
+    selected_year = st.selectbox("Select Academic Year", academic_years, index=2, key="dashboard_year")
 
-    for year in academic_years:
-        st.markdown(f"### 📅 Academic Year: {year}")
+    # Load all data
+    journal_df = load_data(f"data/journals_{selected_year}.csv")
+    research_df = load_data(f"data/research_{selected_year}.csv")
+    consultancy_df = load_data(f"data/consultancy_{selected_year}.csv")
+    patent_df = load_data(f"data/patents_{selected_year}.csv")
+    ideas_df = load_data(f"data/ideas_{selected_year}.csv")
 
-        # Journals
-        journal_path = f"data/journals_{year}.csv"
-        if os.path.exists(journal_path):
-            st.markdown("**📄 Journal Publications**")
-            df_journal = pd.read_csv(journal_path)
-            st.dataframe(df_journal)
-            excel_dl = get_excel_download(df_journal, f"journals_{year}.xlsx")
-            st.download_button("📥 Download Journal Publications", data=excel_dl, file_name=f"journals_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            chart = alt.Chart(df_journal).mark_bar().encode(
-                x="Status",
-                y="count()",
-                color="Status",
-                tooltip=["Status", "count()"]
-            ).properties(title="Journal Publication Status")
-            st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 📘 Journal Publications Summary")
+    if not journal_df.empty:
+        st.dataframe(journal_df)
+        chart = alt.Chart(journal_df).mark_bar().encode(
+            x='Status',
+            y='count()',
+            color='Status'
+        ).properties(width=600)
+        st.altair_chart(chart)
 
-        # Research Projects
-        res_path = f"data/research_{year}.csv"
-        if os.path.exists(res_path):
-            st.markdown("**📁 Research Projects**")
-            df_research = pd.read_csv(res_path)
-            st.dataframe(df_research)
-            excel_dl = get_excel_download(df_research, f"research_{year}.xlsx")
-            st.download_button("📥 Download Research Projects", data=excel_dl, file_name=f"research_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            chart = alt.Chart(df_research).mark_bar().encode(
-                x="Status",
-                y="count()",
-                color="Status",
-                tooltip=["Status", "count()"]
-            ).properties(title="Research Project Status")
-            st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 📈 Research Projects Summary")
+    if not research_df.empty:
+        st.dataframe(research_df)
+        chart = alt.Chart(research_df).mark_bar().encode(
+            x='Status',
+            y='count()',
+            color='Status'
+        ).properties(width=600)
+        st.altair_chart(chart)
 
-        # Consultancy Projects
-        con_path = f"data/consultancy_{year}.csv"
-        if os.path.exists(con_path):
-            st.markdown("**💼 Consultancy Projects**")
-            df_consult = pd.read_csv(con_path)
-            st.dataframe(df_consult)
-            excel_dl = get_excel_download(df_consult, f"consultancy_{year}.xlsx")
-            st.download_button("📥 Download Consultancy Projects", data=excel_dl, file_name=f"consultancy_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            chart = alt.Chart(df_consult).mark_bar().encode(
-                x="Status",
-                y="count()",
-                color="Status",
-                tooltip=["Status", "count()"]
-            ).properties(title="Consultancy Project Status")
-            st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 💼 Consultancy Summary")
+    if not consultancy_df.empty:
+        st.dataframe(consultancy_df)
+        chart = alt.Chart(consultancy_df).mark_bar().encode(
+            x='Status',
+            y='count()',
+            color='Status'
+        ).properties(width=600)
+        st.altair_chart(chart)
 
-        # Patents
-        pt_path = f"data/patents_{year}.csv"
-        if os.path.exists(pt_path):
-            st.markdown("**🧠 Patents**")
-            df_patents = pd.read_csv(pt_path)
-            st.dataframe(df_patents)
-            excel_dl = get_excel_download(df_patents, f"patents_{year}.xlsx")
-            st.download_button("📥 Download Patents", data=excel_dl, file_name=f"patents_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            chart = alt.Chart(df_patents).mark_bar().encode(
-                x="Status",
-                y="count()",
-                color="Status",
-                tooltip=["Status", "count()"]
-            ).properties(title="Patent Filing Status")
-            st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 🧠 Patents Summary")
+    if not patent_df.empty:
+        st.dataframe(patent_df)
+        chart = alt.Chart(patent_df).mark_bar().encode(
+            x='Status',
+            y='count()',
+            color='Status'
+        ).properties(width=600)
+        st.altair_chart(chart)
 
-        # Project Ideas
-        idea_path = f"data/project_ideas_{year}.csv"
-        if os.path.exists(idea_path):
-            st.markdown("**🚀 Project Ideas**")
-            df_ideas = pd.read_csv(idea_path)
-            st.dataframe(df_ideas)
-            excel_dl = get_excel_download(df_ideas, f"project_ideas_{year}.xlsx")
-            st.download_button("📥 Download Project Ideas", data=excel_dl, file_name=f"project_ideas_{year}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            chart = alt.Chart(df_ideas).mark_bar().encode(
-                x="Status",
-                y="count()",
-                color="Status",
-                tooltip=["Status", "count()"]
-            ).properties(title="Project Idea Development Status")
-            st.altair_chart(chart, use_container_width=True)
+    st.markdown("### 🚀 Project Ideas Summary")
+    if not ideas_df.empty:
+        st.dataframe(ideas_df)
+        chart = alt.Chart(ideas_df).mark_bar().encode(
+            x='Status',
+            y='count()',
+            color='Status'
+        ).properties(width=600)
+        st.altair_chart(chart)
 
-    st.info("All data shown above is read-only. For any changes, please contact the admin.")
+    st.success("All department-wide data and summaries are visible above.")
