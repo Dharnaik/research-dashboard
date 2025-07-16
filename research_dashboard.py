@@ -57,12 +57,19 @@ def upload_file(uploaded_file, folder):
     return ""
 
 # -------------------- TABS -------------------- #
-tabs = st.tabs(["📄 Journal Publications", "📁 Research Projects", "💼 Consultancy Projects", "🧠 Patents", "🚀 Project Ideas", "📊 Department Dashboard"])
+tabs = st.tabs([
+    "📄 Journal Publications",
+    "📁 Research Projects",
+    "💼 Consultancy Projects",
+    "🧠 Patents",
+    "🚀 Project Ideas",
+    "📊 Department Dashboard"
+])
 
 # 1. JOURNAL PUBLICATIONS TAB
 with tabs[0]:
     st.subheader("📄 Journal Publications")
-    year = st.selectbox("Select Academic Year", academic_years, index=2)
+    year = st.selectbox("Select Academic Year", academic_years, index=2, key="journal_year")
     filename = f"data/journals_{year}.csv"
     df = load_data(filename)
 
@@ -90,7 +97,22 @@ with tabs[0]:
     st.markdown("### 📋 Submitted Journal Entries")
     st.dataframe(df)
 
-# TODO: Add forms for tabs 2-5 (Research Projects, Consultancy Projects, Patents, Project Ideas)
+# Placeholder for other tabs to be implemented in the next update
+with tabs[1]:
+    st.subheader("📁 Research Projects")
+    st.info("Form under development. Coming up in next update!")
+
+with tabs[2]:
+    st.subheader("💼 Consultancy Projects")
+    st.info("Form under development. Coming up in next update!")
+
+with tabs[3]:
+    st.subheader("🧠 Patents")
+    st.info("Form under development. Coming up in next update!")
+
+with tabs[4]:
+    st.subheader("🚀 Project Ideas")
+    st.info("Form under development. Coming up in next update!")
 
 # 6. DEPARTMENT-WIDE DASHBOARD
 with tabs[5]:
