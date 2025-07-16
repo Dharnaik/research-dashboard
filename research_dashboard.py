@@ -59,7 +59,38 @@ def upload_file(uploaded_file, folder):
 # -------------------- TABS -------------------- #
 tabs = st.tabs(["📄 Journal Publications", "📁 Research Projects", "💼 Consultancy Projects", "🧠 Patents", "🚀 Project Ideas", "📊 Department Dashboard"])
 
-# (Same data entry tabs remain unchanged up to tabs[4])
+# 1. JOURNAL PUBLICATIONS TAB
+with tabs[0]:
+    st.subheader("📄 Journal Publications")
+    year = st.selectbox("Select Academic Year", academic_years, index=2)
+    filename = f"data/journals_{year}.csv"
+    df = load_data(filename)
+
+    with st.form("journal_form"):
+        col1, col2 = st.columns(2)
+        faculty = col1.selectbox("Faculty Name", faculty_list)
+        journal_name = col2.text_input("Journal Name")
+        col3, col4 = st.columns(2)
+        indexing = col3.selectbox("Indexing", ["Scopus", "SCI", "WoS", "Non-Indexed"])
+        status = col4.selectbox("Status", ["Started Writing", "Writing Completed", "Journal Identified", "Manuscript Submitted", "Under Process", "Under Review", "Published"])
+        col5, col6 = st.columns(2)
+        doi = col5.text_input("DOI Number")
+        issn = col6.text_input("ISSN Number")
+        first_page = st.file_uploader("Upload First Page PDF", type=["pdf"])
+
+        submitted = st.form_submit_button("Submit")
+        if submitted:
+            file_uploaded = upload_file(first_page, "journal") if first_page else ""
+            new_entry = pd.DataFrame([[faculty, journal_name, indexing, status, doi, issn, file_uploaded]],
+                                      columns=["Faculty", "Journal Name", "Indexing", "Status", "DOI", "ISSN", "First Page PDF"])
+            df = pd.concat([df, new_entry], ignore_index=True)
+            save_data(df, filename)
+            st.success("Journal entry submitted.")
+
+    st.markdown("### 📋 Submitted Journal Entries")
+    st.dataframe(df)
+
+# TODO: Add forms for tabs 2-5 (Research Projects, Consultancy Projects, Patents, Project Ideas)
 
 # 6. DEPARTMENT-WIDE DASHBOARD
 with tabs[5]:
