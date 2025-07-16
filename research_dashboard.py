@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+import altair as alt
 
 # -------------------- SETUP -------------------- #
 st.set_page_config(page_title="Research Dashboard", layout="wide")
@@ -55,6 +56,18 @@ def upload_file(uploaded_file, folder):
         return uploaded_file.name
     return ""
 
+def show_all_data(df, chart_col, label_col):
+    st.markdown("### 📊 All Faculty Data")
+    st.dataframe(df)
+    if not df.empty and chart_col in df.columns:
+        chart = alt.Chart(df).mark_bar().encode(
+            x=alt.X(chart_col, sort='-y'),
+            y='count()',
+            color=chart_col,
+            tooltip=[chart_col, 'count()']
+        ).properties(width=600, height=400).interactive()
+        st.altair_chart(chart)
+
 # -------------------- TABS -------------------- #
 tabs = st.tabs(["📄 Journal Publications", "📁 Research Projects", "💼 Consultancy Projects", "🧠 Patents", "🚀 Project Ideas"])
 
@@ -78,7 +91,7 @@ with tabs[0]:
             upload = st.file_uploader("Upload First Page PDF", type=["pdf"])
 
         submitted = st.form_submit_button("Save Journal Entry")
-        if submitted:
+        if submitted and is_admin:
             filename = upload_file(upload, "journal")
             new_entry = pd.DataFrame([[faculty, title, journal_type, doi, issn, status, filename, year, datetime.today()]],
                 columns=["Faculty", "Title", "Type", "DOI", "ISSN", "Status", "File", "Year", "Date"])
@@ -86,8 +99,7 @@ with tabs[0]:
             save_data(df, journal_file)
             st.success("Journal entry saved successfully!")
 
-    st.markdown("### 📊 Journal Records")
-    st.dataframe(df)
+    show_all_data(df, chart_col="Status", label_col="Title")
 
 # 2. RESEARCH PROJECTS
 with tabs[1]:
@@ -105,7 +117,7 @@ with tabs[1]:
         upload = st.file_uploader("Upload Proposal (PDF)", type=["pdf"])
 
         submitted = st.form_submit_button("Save Research Project")
-        if submitted:
+        if submitted and is_admin:
             filename = upload_file(upload, "research")
             new_entry = pd.DataFrame([[faculty, title, submitted_to, status, cost, filename, year, datetime.today()]],
                 columns=["Faculty", "Title", "Submitted To", "Status", "Cost", "File", "Year", "Date"])
@@ -113,7 +125,7 @@ with tabs[1]:
             save_data(df, project_file)
             st.success("Research project saved!")
 
-    st.dataframe(df)
+    show_all_data(df, chart_col="Status", label_col="Title")
 
 # 3. CONSULTANCY PROJECTS
 with tabs[2]:
@@ -131,7 +143,7 @@ with tabs[2]:
         upload = st.file_uploader("Upload Work Order (PDF)", type=["pdf"])
 
         submitted = st.form_submit_button("Save Consultancy Project")
-        if submitted:
+        if submitted and is_admin:
             filename = upload_file(upload, "consultancy")
             new_entry = pd.DataFrame([[faculty, title, client, status, cost, filename, year, datetime.today()]],
                 columns=["Faculty", "Title", "Client", "Status", "Cost", "File", "Year", "Date"])
@@ -139,7 +151,7 @@ with tabs[2]:
             save_data(df, file_path)
             st.success("Consultancy record saved!")
 
-    st.dataframe(df)
+    show_all_data(df, chart_col="Status", label_col="Title")
 
 # 4. PATENTS
 with tabs[3]:
@@ -157,7 +169,7 @@ with tabs[3]:
         upload = st.file_uploader("Upload Patent Document (PDF)", type=["pdf"])
 
         submitted = st.form_submit_button("Save Patent")
-        if submitted:
+        if submitted and is_admin:
             filename = upload_file(upload, "patent")
             new_entry = pd.DataFrame([[faculty, title, app_no, patent_type, status, filename, year, datetime.today()]],
                 columns=["Faculty", "Title", "App No", "Type", "Status", "File", "Year", "Date"])
@@ -165,7 +177,7 @@ with tabs[3]:
             save_data(df, file_path)
             st.success("Patent record saved!")
 
-    st.dataframe(df)
+    show_all_data(df, chart_col="Status", label_col="Title")
 
 # 5. PROJECT IDEAS
 with tabs[4]:
@@ -182,11 +194,11 @@ with tabs[4]:
         domain = st.text_input("Domain / Type")
 
         submitted = st.form_submit_button("Save Project Idea")
-        if submitted:
+        if submitted and is_admin:
             new_entry = pd.DataFrame([[faculty, title, status, assigned_to, domain, year, datetime.today()]],
                 columns=["Faculty", "Title", "Status", "Assigned To", "Domain", "Year", "Date"])
             df = pd.concat([df, new_entry], ignore_index=True)
             save_data(df, file_path)
             st.success("Project idea saved!")
 
-    st.dataframe(df)
+    show_all_data(df, chart_col="Status", label_col="Title")
