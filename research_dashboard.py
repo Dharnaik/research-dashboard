@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 import altair as alt
 from io import BytesIO
+from fpdf import FPDF
 
 # -------------------- SETUP -------------------- #
 st.set_page_config(page_title="Research Dashboard", layout="wide")
@@ -65,6 +66,30 @@ def get_excel_download(df, filename):
     output.seek(0)
     return output
 
+def get_pdf_download(df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+    col_width = pdf.w / (len(df.columns) + 1)
+    row_height = pdf.font_size * 1.5
+
+    # Header
+    for col in df.columns:
+        pdf.cell(col_width, row_height, str(col), border=1)
+    pdf.ln(row_height)
+
+    # Rows
+    for i in range(len(df)):
+        for col in df.columns:
+            value = str(df.iloc[i][col])
+            pdf.cell(col_width, row_height, value[:25], border=1)
+        pdf.ln(row_height)
+
+    output = BytesIO()
+    pdf.output(output)
+    output.seek(0)
+    return output
+
 # Timestamp
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -102,6 +127,7 @@ def create_tab(tab_name, field_label):
                 st.warning(f"This {tab_name.lower()} already exists. You can only update the status.")
                 if is_admin:
                     new_status = st.selectbox("Update Status", ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"], key=f"update_{tab_name}_status")
+                    df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Previous Status'] = df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Status']
                     df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Status'] = new_status
                     df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Updated On'] = timestamp
                     save_data(df, df_path)
@@ -112,6 +138,7 @@ def create_tab(tab_name, field_label):
                     "Faculty": faculty,
                     f"{field_label} Title": title,
                     "Status": status,
+                    "Previous Status": "-",
                     "Uploaded File": doc_name,
                     "Submitted On": timestamp,
                     "Updated On": timestamp
@@ -124,8 +151,15 @@ def create_tab(tab_name, field_label):
             st.markdown(f"### {tab_name} Records")
             st.dataframe(df)
             st.download_button("Download Excel", get_excel_download(df, f"{tab_name.lower()}_{selected_year}.xlsx"), file_name=f"{tab_name.lower()}_{selected_year}.xlsx")
+            st.download_button("Download PDF", get_pdf_download(df), file_name=f"{tab_name.lower()}_{selected_year}.pdf")
 
-# Apply to all project-related tabs
+# Apply to all tabs
+with tabs[0]:
+    create_tab("Journal Publications", "Journal")
+
+with tabs[1]:
+    create_tab("Research Projects", "Research")
+
 with tabs[2]:
     create_tab("Consultancy Projects", "Consultancy")
 
@@ -160,12 +194,13 @@ with tabs[5]:
         st.dataframe(filtered)
 
         st.download_button("Download All Records (Excel)", get_excel_download(filtered, f"department_dashboard_{selected_year}.xlsx"), file_name=f"department_dashboard_{selected_year}.xlsx")
+        st.download_button("Download PDF", get_pdf_download(filtered), file_name=f"department_dashboard_{selected_year}.pdf")
 
         chart = alt.Chart(filtered).mark_bar().encode(
-            x="Type",
+            x="Faculty",
             y="count()",
             color="Type"
-        ).properties(width=700, height=400)
+        ).properties(width=900, height=400)
         st.altair_chart(chart)
     else:
         st.info("No data available yet for Department Dashboard.")
