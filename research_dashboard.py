@@ -1,4 +1,4 @@
-# research_dashboard.py
+# research_dashboard.py (updated)
 import streamlit as st
 import pandas as pd
 import os
@@ -11,15 +11,12 @@ from fpdf import FPDF
 st.set_page_config(page_title="Research Dashboard", layout="wide")
 st.title("\U0001F393 Civil Engineering Research Dashboard")
 
-# Admin access control
 admin_password = st.sidebar.text_input("\U0001F512 Admin Password (for edit access)", type="password")
 is_admin = admin_password == "mitresearch2025"
 
-# Academic Year Options
 academic_years = ["2023–24", "2024–25", "2025–26"]
 current_year = "2025–26"
 
-# Folder setup
 upload_dirs = {
     "journal": "uploads/journals/",
     "research": "uploads/research/",
@@ -30,7 +27,6 @@ upload_dirs = {
 for path in upload_dirs.values():
     os.makedirs(path, exist_ok=True)
 
-# Faculty List
 faculty_list = [
     "Prof. Dr. Satish B. Patil",
     "Prof. Abhijeet A. Galatage",
@@ -44,7 +40,8 @@ faculty_list = [
     "Prof. Sagar K. Sonawane"
 ]
 
-# Utility functions
+status_options = ["Idea", "Submitted", "Under Review", "Approved", "Sanctioned", "Completed", "Rejected"]
+
 def load_data(filename):
     return pd.read_csv(filename) if os.path.exists(filename) else pd.DataFrame()
 
@@ -72,27 +69,84 @@ def get_pdf_download(df):
     pdf.set_font("Arial", size=10)
     col_width = pdf.w / (len(df.columns) + 1)
     row_height = pdf.font_size * 1.5
-
-    # Header
     for col in df.columns:
         pdf.cell(col_width, row_height, str(col), border=1)
     pdf.ln(row_height)
-
-    # Rows
     for i in range(len(df)):
         for col in df.columns:
             value = str(df.iloc[i][col])
             pdf.cell(col_width, row_height, value[:25], border=1)
         pdf.ln(row_height)
-
     output = BytesIO()
     pdf.output(output)
     output.seek(0)
     return output
 
-# Timestamp
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def create_form(tab, year):
+    st.subheader(f"Add New {tab} Entry")
+    df_path = f"data/{tab.lower()}_{year}.csv"
+    df = load_data(df_path)
+
+    with st.form(f"form_{tab}"):
+        faculty = st.selectbox("Faculty Name", faculty_list)
+        title = st.text_input(f"{tab} Title")
+        status = st.selectbox("Status", status_options)
+        status_date = st.date_input("Status Date", datetime.today())
+
+        if tab == "Research Projects":
+            agency = st.text_input("Funding Agency")
+            amount = st.number_input("Sanctioned Amount (₹)", min_value=0.0)
+            role = st.selectbox("Role", ["PI", "Co-PI"])
+            duration = st.number_input("Project Duration (Months)", min_value=1)
+        elif tab == "Consultancy Projects":
+            client = st.text_input("Client/Agency Name")
+            amount = st.number_input("Consultancy Amount (₹)", min_value=0.0)
+        elif tab == "Patents":
+            patent_type = st.selectbox("Patent Type", ["Provisional", "Complete", "Design", "Copyright"])
+            inventors = st.multiselect("Inventors", faculty_list)
+            application_no = st.text_input("Patent Application Number")
+            filing_date = st.date_input("Filing Date")
+        elif tab == "Project Ideas":
+            description = st.text_area("Idea Description")
+
+        remarks = st.text_area("Remarks (Optional)")
+        doc_upload = st.file_uploader("Upload Supporting Document (PDF/DOCX)", type=["pdf", "docx"])
+        submit = st.form_submit_button("Submit")
+
+    if submit:
+        doc_name = upload_file(doc_upload, tab.lower())
+        row = {
+            "Faculty": faculty,
+            "Academic Year": year,
+            f"{tab} Title": title,
+            "Status": status,
+            "Status Date": status_date.strftime("%Y-%m-%d"),
+            "Remarks": remarks,
+            "Uploaded File": doc_name,
+            "Submitted On": get_now(),
+            "Updated On": get_now()
+        }
+        if tab == "Research Projects":
+            row.update({"Agency": agency, "Amount": amount, "Role": role, "Duration": duration})
+        elif tab == "Consultancy Projects":
+            row.update({"Client": client, "Amount": amount})
+        elif tab == "Patents":
+            row.update({"Patent Type": patent_type, "Inventors": ", ".join(inventors), "Application No": application_no, "Filing Date": filing_date.strftime("%Y-%m-%d")})
+        elif tab == "Project Ideas":
+            row.update({"Description": description})
+
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        save_data(df, df_path)
+        st.success(f"{tab} entry submitted successfully!")
+
+    if not df.empty:
+        st.markdown(f"### {tab} Records")
+        st.dataframe(df)
+        st.download_button("Download Excel", get_excel_download(df, f"{tab.lower()}_{year}.xlsx"), file_name=f"{tab.lower()}_{year}.xlsx")
+        st.download_button("Download PDF", get_pdf_download(df), file_name=f"{tab.lower()}_{year}.pdf")
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
@@ -104,72 +158,21 @@ tabs = st.tabs([
     "\U0001F4CA Department Dashboard"
 ])
 
-# Tab Templates
-def create_tab(tab_name, field_label):
-    with st.container():
-        st.subheader(f"Add {tab_name} Entry")
-        selected_year = st.selectbox("Select Academic Year", academic_years, index=2, key=f"{tab_name.lower()}_year")
-        df_path = f"data/{tab_name.lower()}_{selected_year}.csv"
-        df = load_data(df_path)
-
-        with st.form(f"{tab_name.lower()}_form"):
-            faculty = st.selectbox("Faculty Name", faculty_list, key=f"faculty_{tab_name}")
-            title = st.text_input(f"{field_label} Title")
-            status = st.selectbox("Status", ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"])
-            doc_upload = st.file_uploader("Upload Supporting Document (Optional)", type=["pdf", "docx"])
-            submit = st.form_submit_button("Submit")
-
-        timestamp = get_now()
-
-        if submit:
-            duplicate = df[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title)]
-            if not duplicate.empty:
-                st.warning(f"This {tab_name.lower()} already exists. You can only update the status.")
-                if is_admin:
-                    new_status = st.selectbox("Update Status", ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"], key=f"update_{tab_name}_status")
-                    df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Previous Status'] = df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Status']
-                    df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Status'] = new_status
-                    df.loc[(df['Faculty'] == faculty) & (df[f'{field_label} Title'] == title), 'Updated On'] = timestamp
-                    save_data(df, df_path)
-                    st.success(f"{tab_name} status updated successfully!")
-            else:
-                doc_name = upload_file(doc_upload, tab_name.lower())
-                new_row = pd.DataFrame([{
-                    "Faculty": faculty,
-                    f"{field_label} Title": title,
-                    "Status": status,
-                    "Previous Status": "-",
-                    "Uploaded File": doc_name,
-                    "Submitted On": timestamp,
-                    "Updated On": timestamp
-                }])
-                df = pd.concat([df, new_row], ignore_index=True)
-                save_data(df, df_path)
-                st.success(f"{tab_name} submitted successfully!")
-
-        if not df.empty:
-            st.markdown(f"### {tab_name} Records")
-            st.dataframe(df)
-            st.download_button("Download Excel", get_excel_download(df, f"{tab_name.lower()}_{selected_year}.xlsx"), file_name=f"{tab_name.lower()}_{selected_year}.xlsx")
-            st.download_button("Download PDF", get_pdf_download(df), file_name=f"{tab_name.lower()}_{selected_year}.pdf")
-
-# Apply to all tabs
 with tabs[0]:
-    create_tab("Journal Publications", "Journal")
+    create_form("Journal Publications", current_year)
 
 with tabs[1]:
-    create_tab("Research Projects", "Research")
+    create_form("Research Projects", current_year)
 
 with tabs[2]:
-    create_tab("Consultancy Projects", "Consultancy")
+    create_form("Consultancy Projects", current_year)
 
 with tabs[3]:
-    create_tab("Patents", "Patent")
+    create_form("Patents", current_year)
 
 with tabs[4]:
-    create_tab("Project Ideas", "Idea")
+    create_form("Project Ideas", current_year)
 
-# Dashboard Tab
 with tabs[5]:
     st.subheader("\U0001F4CA Department Dashboard Overview")
     all_dataframes = []
@@ -186,21 +189,13 @@ with tabs[5]:
         all_data = pd.concat(all_dataframes, ignore_index=True)
         selected_year = st.selectbox("Filter by Academic Year", academic_years, index=2)
         selected_faculty = st.selectbox("Filter by Faculty", ["All"] + faculty_list)
-
         filtered = all_data[all_data["Academic Year"] == selected_year]
         if selected_faculty != "All":
             filtered = filtered[filtered["Faculty"] == selected_faculty]
-
         st.dataframe(filtered)
-
         st.download_button("Download All Records (Excel)", get_excel_download(filtered, f"department_dashboard_{selected_year}.xlsx"), file_name=f"department_dashboard_{selected_year}.xlsx")
         st.download_button("Download PDF", get_pdf_download(filtered), file_name=f"department_dashboard_{selected_year}.pdf")
-
-        chart = alt.Chart(filtered).mark_bar().encode(
-            x="Faculty",
-            y="count()",
-            color="Type"
-        ).properties(width=900, height=400)
+        chart = alt.Chart(filtered).mark_bar().encode(x="Faculty", y="count()", color="Type").properties(width=900, height=400)
         st.altair_chart(chart)
     else:
         st.info("No data available yet for Department Dashboard.")
