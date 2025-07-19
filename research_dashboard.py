@@ -140,7 +140,15 @@ def create_form(tab, year):
         submit = st.form_submit_button("Submit")
 
     if submit:
-        doc_name = upload_file(doc_upload, tab.lower().split()[0])
+        duplicate_check = df[
+            (df["Faculty"] == faculty) &
+            (df["Academic Year"] == year) &
+            (df[f"{tab} Title"] == title)
+        ]
+        if not duplicate_check.empty:
+            st.warning("Duplicate entry found. This record already exists.")
+        else:
+            doc_name = upload_file(doc_upload, tab.lower().split()[0])
         row = {
             "Faculty": faculty,
             "Academic Year": year,
