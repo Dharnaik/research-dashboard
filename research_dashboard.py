@@ -96,7 +96,9 @@ def create_form(tab, year):
     df = load_data(df_path)
 
     with st.form(f"form_{tab}"):
-        faculty = st.selectbox("Faculty Name", faculty_list)
+        faculty = st.selectbox("Faculty Name", ["Select Faculty"] + faculty_list)
+        if faculty == "Select Faculty":
+            st.warning("Please select a faculty name before submitting.")
         title = st.text_input(f"{tab} Title")
         status = st.selectbox("Status", status_options)
         status_date = st.date_input("Status Date", datetime.today())
