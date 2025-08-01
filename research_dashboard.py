@@ -1,4 +1,4 @@
-# research_dashboard.py (updated with Conference and Book Tabs, and custom status per tab)
+# research_dashboard.py (Complete Functional Version)
 import streamlit as st
 import pandas as pd
 import os
@@ -55,15 +55,67 @@ status_dict = {
 
 journal_indexing = ["Scopus", "SCI", "Web of Science", "Non-Scopus"]
 
-def load_data(filename):
+def get_now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def load_data(filename, tab):
     if os.path.exists(filename):
         return pd.read_csv(filename)
     else:
-        base_columns = ["Faculty", "Academic Year", f"{filename.split('/')[-1].replace('_2025–26.csv","').replace('_',' ').title()} Title", "Status", "Status Date", "Remarks", "Uploaded File", "Submitted On", "Updated On"]
-        return pd.DataFrame(columns=base_columns)
+        title_col = f"{tab} Title"
+        base_cols = ["Faculty", "Academic Year", title_col, "Status", "Status Date", "Remarks", "Uploaded File", "Submitted On", "Updated On"]
+        return pd.DataFrame(columns=base_cols)
 
 def save_data(df, filename):
     df.to_csv(filename, index=False)
+
+def create_form(tab, year):
+    st.subheader(f"{tab} - {year}")
+    df_path = f"data/{tab.lower().replace(' ', '_')}_{year}.csv"
+    df = load_data(df_path, tab)
+
+    with st.form(f"form_{tab}"):
+        faculty = st.selectbox("Faculty Name", faculty_list)
+        title = st.text_input(f"{tab} Title")
+        status = st.selectbox("Status", status_dict.get(tab, []))
+        status_date = st.date_input("Status Date", datetime.today())
+        remarks = st.text_area("Remarks (Optional)")
+        doc = st.file_uploader("Upload Document", type=["pdf", "docx"])
+        submit = st.form_submit_button("Submit")
+
+    if submit:
+        if faculty and title:
+            duplicate = df[(df["Faculty"] == faculty) & (df["Academic Year"] == year) & (df[f"{tab} Title"] == title)]
+            if not duplicate.empty:
+                st.warning("This entry already exists.")
+            else:
+                doc_name = ""
+                if doc:
+                    folder_key = tab.lower().split()[0]
+                    filepath = os.path.join(upload_dirs[folder_key], doc.name)
+                    with open(filepath, "wb") as f:
+                        f.write(doc.getbuffer())
+                    doc_name = doc.name
+                row = {
+                    "Faculty": faculty,
+                    "Academic Year": year,
+                    f"{tab} Title": title,
+                    "Status": status,
+                    "Status Date": status_date.strftime("%Y-%m-%d"),
+                    "Remarks": remarks,
+                    "Uploaded File": doc_name,
+                    "Submitted On": get_now(),
+                    "Updated On": get_now()
+                }
+                df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+                save_data(df, df_path)
+                st.success("Entry submitted successfully!")
+        else:
+            st.error("Please fill all required fields.")
+
+    if not df.empty:
+        st.markdown("### All Records")
+        st.dataframe(df)
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
@@ -78,19 +130,19 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
-    st.write("Journal Publications form loading...")
+    create_form("Journal Publications", current_year)
 with tabs[1]:
-    st.write("Research Projects form loading...")
+    create_form("Research Projects", current_year)
 with tabs[2]:
-    st.write("Consultancy Projects form loading...")
+    create_form("Consultancy Projects", current_year)
 with tabs[3]:
-    st.write("Patents form loading...")
+    create_form("Patents", current_year)
 with tabs[4]:
-    st.write("Project Ideas form loading...")
+    create_form("Project Ideas", current_year)
 with tabs[5]:
-    st.write("Conference form loading...")
+    create_form("Conference", current_year)
 with tabs[6]:
-    st.write("Book / Book Chapter form loading...")
+    create_form("Book / Book Chapter", current_year)
 with tabs[7]:
     st.subheader("\U0001F4CA Department Dashboard Overview")
-    st.write("Department Dashboard coming soon...")
+    st.write("Coming soon with graphs, filters, and download options.")
