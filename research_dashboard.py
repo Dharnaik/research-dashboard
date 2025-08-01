@@ -33,7 +33,6 @@ for path in upload_dirs.values():
     os.makedirs(path, exist_ok=True)
 
 faculty_list = [
-    "Select Your Name",
     "Prof. Dr. Yuvaraj L. Bhirud",
     "Prof. Dr. Satish B. Patil",
     "Prof. Abhijeet A. Galatage",
@@ -52,12 +51,13 @@ status_dict = {
     "Research Projects": ["Idea", "Submitted", "In Process of Approval", "Approved", "In Process", "Completed"],
     "Consultancy Projects": ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"],
     "Patents": ["Filed", "Published", "Granted"],
-    "Project Ideas": ["Drafted", "Submitted", "Under Review", "Assigned to S.Y. Mini Project", "Assigned to T.Y. Mini Project", "Assigned to B.Tech. Project", "Implemented"],
+    "Project Ideas": ["Drafted", "Submitted", "Under Review", "Implemented"],
     "Conference": ["Submitted", "Accepted", "Presented"],
     "Book / Book Chapter": ["Proposal Submitted", "Accepted", "In Press", "Published"]
 }
 
 journal_indexing = ["Scopus", "SCI", "Web of Science", "Non-Scopus"]
+scopus_quartiles = ["Q1", "Q2", "Q3", "Q4"]
 
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -83,6 +83,18 @@ def create_form(tab, year):
         title = st.text_input(f"{tab} Title")
         status = st.selectbox("Status", status_dict.get(tab, []))
         status_date = st.date_input("Status Date", datetime.today())
+
+        issn = doi = volume = issue = pub_date = quartile = ""
+        if tab == "Journal Publications" and status == "Published":
+            issn = st.text_input("ISSN Number")
+            doi = st.text_input("DOI Number")
+            volume = st.text_input("Volume")
+            issue = st.text_input("Issue")
+            pub_date = st.date_input("Date of Publication", datetime.today()).strftime("%Y-%m-%d")
+            indexing = st.selectbox("Indexing", journal_indexing)
+            if indexing == "Scopus":
+                quartile = st.selectbox("Scopus Quartile", scopus_quartiles)
+
         remarks = st.text_area("Remarks (Optional)")
         doc = st.file_uploader("Upload Document", type=["pdf", "docx"])
         submit = st.form_submit_button("Submit")
@@ -111,6 +123,16 @@ def create_form(tab, year):
                     "Submitted On": get_now(),
                     "Updated On": get_now()
                 }
+                if tab == "Journal Publications" and status == "Published":
+                    row.update({
+                        "ISSN": issn,
+                        "DOI": doi,
+                        "Volume": volume,
+                        "Issue": issue,
+                        "Date of Publication": pub_date,
+                        "Indexing": indexing,
+                        "Scopus Quartile": quartile
+                    })
                 df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
                 save_data(df, df_path)
                 st.success("Entry submitted successfully!")
