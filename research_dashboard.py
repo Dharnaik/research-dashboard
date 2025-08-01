@@ -55,7 +55,11 @@ status_dict = {
     "Research Projects": ["Idea", "Submitted", "In Process of Approval", "Approved", "In Process", "Completed"],
     "Consultancy Projects": ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"],
     "Patents": ["Filed", "Published", "Granted"],
-    "Project Ideas": ["Drafted", "Submitted", "Assigned - S.Y. Mini Project", "Assigned - T.Y. Mini Project",   "Assigned - B.Tech Project",   "Assigned - M.Tech TRE",    "Assigned - M.Tech Structural",   "Assigned - Ph.D.", "Under Review", "Implemented"],
+    "Project Ideas": [
+        "Drafted", "Submitted", "Under Review", "Implemented",
+        "S.Y Mini Project", "T.Y Mini Project", "B.Tech Project",
+        "M.Tech TRE", "M.Tech STR", "Ph.D."
+    ],
     "Conference": ["Submitted", "Accepted", "Presented"],
     "Book / Book Chapter": ["Proposal Submitted", "Accepted", "In Press", "Published"]
 }
