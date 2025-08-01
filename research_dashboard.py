@@ -43,7 +43,7 @@ faculty_list = [
     "Prof. Sagar K. Sonawane"
 ]
 
-status_options = ["Idea", "Submitted", "Under Review", "Approved", "Sanctioned", "Completed", "Rejected"]
+status_options = ["Idea", "Started Writing", "Submitted", "Under Review", "Published", "Approved", "Sanctioned", "Completed", "Rejected"]
 
 journal_indexing = ["Scopus", "SCI", "Web of Science", "Non-Scopus"]
 
