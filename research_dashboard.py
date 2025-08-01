@@ -1,4 +1,4 @@
-# research_dashboard.py (Updated with Dashboard Graphs and Error Fixes)
+# research_dashboard.py (Enhanced with Admin Login and Edit Capabilities)
 import streamlit as st
 import pandas as pd
 import os
@@ -11,10 +11,13 @@ from fpdf import FPDF
 st.set_page_config(page_title="Research Dashboard", layout="wide")
 st.title("\U0001F393 Civil Engineering Research Dashboard")
 
-admin_password = st.sidebar.text_input("\U0001F512 Admin Password (for edit access)", type="password")
-is_admin = admin_password == "mitresearch2025"
+admin_users = {"admin@mit.edu": "mitresearch2025"}
 
-academic_years = ["2023–24", "2024–25", "2025–26"]
+admin_email = st.sidebar.text_input("\U0001F4E7 Admin Email")
+admin_password = st.sidebar.text_input("\U0001F512 Admin Password", type="password")
+is_admin = admin_users.get(admin_email) == admin_password
+
+academic_years = ["2025–26", "2026–27", "2027–28"]
 current_year = "2025–26"
 
 data_dir = "data"
@@ -52,7 +55,7 @@ status_dict = {
     "Research Projects": ["Idea", "Submitted", "In Process of Approval", "Approved", "In Process", "Completed"],
     "Consultancy Projects": ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"],
     "Patents": ["Filed", "Published", "Granted"],
-    "Project Ideas": ["Drafted", "Submitted", "Under Review", "Implemented"],
+    "Project Ideas": ["Drafted", "Submitted", "Assigned - S.Y. Mini Project", "Assigned - T.Y. Mini Project",   "Assigned - B.Tech Project",   "Assigned - M.Tech TRE",    "Assigned - M.Tech Structural",   "Assigned - Ph.D.", "Under Review", "Implemented"],
     "Conference": ["Submitted", "Accepted", "Presented"],
     "Book / Book Chapter": ["Proposal Submitted", "Accepted", "In Press", "Published"]
 }
@@ -81,6 +84,7 @@ def create_form(tab, year):
 
     with st.form(f"form_{tab}"):
         faculty = st.selectbox("Faculty Name", faculty_list)
+        year_selected = st.selectbox("Academic Year", academic_years, index=0)
         title = st.text_input(f"{tab} Title")
         status = st.selectbox("Status", status_dict.get(tab, []))
         status_date = st.date_input("Status Date", datetime.today())
@@ -102,7 +106,7 @@ def create_form(tab, year):
 
     if submit:
         if faculty and title:
-            duplicate = df[(df["Faculty"] == faculty) & (df["Academic Year"] == year) & (df[f"{tab} Title"] == title)]
+            duplicate = df[(df["Faculty"] == faculty) & (df["Academic Year"] == year_selected) & (df[f"{tab} Title"] == title)]
             if not duplicate.empty:
                 st.warning("This entry already exists.")
             else:
@@ -115,7 +119,7 @@ def create_form(tab, year):
                     doc_name = doc.name
                 row = {
                     "Faculty": faculty,
-                    "Academic Year": year,
+                    "Academic Year": year_selected,
                     f"{tab} Title": title,
                     "Status": status,
                     "Status Date": status_date.strftime("%Y-%m-%d"),
@@ -143,6 +147,14 @@ def create_form(tab, year):
     if not df.empty:
         st.markdown("### All Records")
         st.dataframe(df)
+        if is_admin:
+            st.markdown("#### Edit Mode (Admin Only)")
+            row_to_edit = st.selectbox("Select Row to Edit (by Index)", df.index.tolist())
+            if st.button("Update Last Status to: Completed"):
+                df.at[row_to_edit, "Status"] = "Completed"
+                df.at[row_to_edit, "Updated On"] = get_now()
+                save_data(df, df_path)
+                st.success("Status updated by Admin!")
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
