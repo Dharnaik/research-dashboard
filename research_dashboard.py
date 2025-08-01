@@ -33,6 +33,7 @@ for path in upload_dirs.values():
     os.makedirs(path, exist_ok=True)
 
 faculty_list = [
+    "Select Your Name",
     "Prof. Dr. Yuvaraj L. Bhirud",
     "Prof. Dr. Satish B. Patil",
     "Prof. Abhijeet A. Galatage",
