@@ -1,4 +1,4 @@
-# research_dashboard.py (updated with Conference and Book Tabs)
+# research_dashboard.py (updated with Conference and Book Tabs, and custom status per tab)
 import streamlit as st
 import pandas as pd
 import os
@@ -43,7 +43,15 @@ faculty_list = [
     "Prof. Sagar K. Sonawane"
 ]
 
-status_options = ["Idea", "Started Writing", "Submitted", "Under Review", "Published", "Approved", "Sanctioned", "Completed", "Rejected"]
+status_dict = {
+    "Journal Publications": ["Started Writing", "Journal Identifying", "Manuscript Submitted", "In Process", "Under Review", "Accepted", "Published"],
+    "Research Projects": ["Idea", "Submitted", "In Process of Approval", "Approved", "In Process", "Completed"],
+    "Consultancy Projects": ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"],
+    "Patents": ["Filed", "Published", "Granted"],
+    "Project Ideas": ["Drafted", "Submitted", "Assigned to S.Y. Mini Project", "Assigned to T.Y. Mini Project", "Assigned to Final Year Project","In-Process", "Completed", "Implemented"],
+    "Conference": ["Submitted", "Accepted", "Presented"],
+    "Book / Book Chapter": ["Started Writing", "Submitted", "Accepted", "In Press", "Published"]
+}
 
 journal_indexing = ["Scopus", "SCI", "Web of Science", "Non-Scopus"]
 
@@ -100,7 +108,7 @@ def create_form(tab, year):
         if faculty == "Select Faculty":
             st.warning("Please select a faculty name before submitting.")
         title = st.text_input(f"{tab} Title")
-        status = st.selectbox("Status", status_options)
+        status = st.selectbox("Status", status_dict.get(tab, ["Draft", "Submitted", "Published"]))
         status_date = st.date_input("Status Date", datetime.today())
 
         if tab == "Journal Publications":
@@ -149,35 +157,35 @@ def create_form(tab, year):
             st.warning("Duplicate entry found. This record already exists.")
         else:
             doc_name = upload_file(doc_upload, tab.lower().split()[0])
-        row = {
-            "Faculty": faculty,
-            "Academic Year": year,
-            f"{tab} Title": title,
-            "Status": status,
-            "Status Date": status_date.strftime("%Y-%m-%d"),
-            "Remarks": remarks,
-            "Uploaded File": doc_name,
-            "Submitted On": get_now(),
-            "Updated On": get_now()
-        }
-        if tab == "Journal Publications":
-            row.update({"Journal Name": journal_name, "Indexing": indexing, "ISSN": issn, "DOI": doi})
-        elif tab == "Research Projects":
-            row.update({"Agency": agency, "Amount": amount, "Role": role, "Duration": duration})
-        elif tab == "Consultancy Projects":
-            row.update({"Client": client, "Amount": amount})
-        elif tab == "Patents":
-            row.update({"Patent Type": patent_type, "Inventors": ", ".join(inventors), "Application No": application_no, "Filing Date": filing_date.strftime("%Y-%m-%d")})
-        elif tab == "Project Ideas":
-            row.update({"Description": description})
-        elif tab == "Conference":
-            row.update({"Conference Name": conf_name, "Location": location, "Level": level, "Presentation Type": presentation_type})
-        elif tab == "Book / Book Chapter":
-            row.update({"Entry Type": book_chap_type, "Book Title": book_title, "Chapter Title": chapter_title, "Publisher": publisher, "ISBN": isbn})
+            row = {
+                "Faculty": faculty,
+                "Academic Year": year,
+                f"{tab} Title": title,
+                "Status": status,
+                "Status Date": status_date.strftime("%Y-%m-%d"),
+                "Remarks": remarks,
+                "Uploaded File": doc_name,
+                "Submitted On": get_now(),
+                "Updated On": get_now()
+            }
+            if tab == "Journal Publications":
+                row.update({"Journal Name": journal_name, "Indexing": indexing, "ISSN": issn, "DOI": doi})
+            elif tab == "Research Projects":
+                row.update({"Agency": agency, "Amount": amount, "Role": role, "Duration": duration})
+            elif tab == "Consultancy Projects":
+                row.update({"Client": client, "Amount": amount})
+            elif tab == "Patents":
+                row.update({"Patent Type": patent_type, "Inventors": ", ".join(inventors), "Application No": application_no, "Filing Date": filing_date.strftime("%Y-%m-%d")})
+            elif tab == "Project Ideas":
+                row.update({"Description": description})
+            elif tab == "Conference":
+                row.update({"Conference Name": conf_name, "Location": location, "Level": level, "Presentation Type": presentation_type})
+            elif tab == "Book / Book Chapter":
+                row.update({"Entry Type": book_chap_type, "Book Title": book_title, "Chapter Title": chapter_title, "Publisher": publisher, "ISBN": isbn})
 
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-        save_data(df, df_path)
-        st.success(f"{tab} entry submitted successfully!")
+            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+            save_data(df, df_path)
+            st.success(f"{tab} entry submitted successfully!")
 
     if is_admin:
         st.markdown("### Admin: Upload CSV Data")
