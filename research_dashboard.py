@@ -59,10 +59,38 @@ def load_data(filename):
     if os.path.exists(filename):
         return pd.read_csv(filename)
     else:
-        base_columns = ["Faculty", "Academic Year", f"{filename.split('/')[-1].replace('_2025–26.csv','').replace('_',' ').title()} Title", "Status", "Status Date", "Remarks", "Uploaded File", "Submitted On", "Updated On"]
+        base_columns = ["Faculty", "Academic Year", f"{filename.split('/')[-1].replace('_2025–26.csv","').replace('_',' ').title()} Title", "Status", "Status Date", "Remarks", "Uploaded File", "Submitted On", "Updated On"]
         return pd.DataFrame(columns=base_columns)
 
 def save_data(df, filename):
     df.to_csv(filename, index=False)
 
-# ... rest of code remains unchanged from previous version ...
+# -------------------- TABS -------------------- #
+tabs = st.tabs([
+    "\U0001F4C4 Journal Publications",
+    "\U0001F4C1 Research Projects",
+    "\U0001F4BC Consultancy Projects",
+    "\U0001F9E0 Patents",
+    "\U0001F680 Project Ideas",
+    "\U0001F4E2 Conference",
+    "\U0001F4D6 Book / Book Chapter",
+    "\U0001F4CA Department Dashboard"
+])
+
+with tabs[0]:
+    st.write("Journal Publications form loading...")
+with tabs[1]:
+    st.write("Research Projects form loading...")
+with tabs[2]:
+    st.write("Consultancy Projects form loading...")
+with tabs[3]:
+    st.write("Patents form loading...")
+with tabs[4]:
+    st.write("Project Ideas form loading...")
+with tabs[5]:
+    st.write("Conference form loading...")
+with tabs[6]:
+    st.write("Book / Book Chapter form loading...")
+with tabs[7]:
+    st.subheader("\U0001F4CA Department Dashboard Overview")
+    st.write("Department Dashboard coming soon...")
