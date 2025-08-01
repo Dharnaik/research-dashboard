@@ -1,4 +1,4 @@
-# research_dashboard.py (Complete Functional Version)
+# research_dashboard.py (Updated with Dashboard Graphs and Error Fixes)
 import streamlit as st
 import pandas as pd
 import os
@@ -16,6 +16,9 @@ is_admin = admin_password == "mitresearch2025"
 
 academic_years = ["2023–24", "2024–25", "2025–26"]
 current_year = "2025–26"
+
+data_dir = "data"
+os.makedirs(data_dir, exist_ok=True)
 
 upload_dirs = {
     "journal": "uploads/journals/",
@@ -71,7 +74,7 @@ def save_data(df, filename):
 
 def create_form(tab, year):
     st.subheader(f"{tab} - {year}")
-    df_path = f"data/{tab.lower().replace(' ', '_')}_{year}.csv"
+    df_path = f"{data_dir}/{tab.lower().replace(' ', '_')}_{year}.csv"
     df = load_data(df_path, tab)
 
     with st.form(f"form_{tab}"):
@@ -145,4 +148,25 @@ with tabs[6]:
     create_form("Book / Book Chapter", current_year)
 with tabs[7]:
     st.subheader("\U0001F4CA Department Dashboard Overview")
-    st.write("Coming soon with graphs, filters, and download options.")
+    all_data = []
+    for tab in status_dict:
+        for year in academic_years:
+            df_path = f"{data_dir}/{tab.lower().replace(' ', '_')}_{year}.csv"
+            if os.path.exists(df_path):
+                df = pd.read_csv(df_path)
+                df["Type"] = tab
+                df["Academic Year"] = year
+                all_data.append(df)
+
+    if all_data:
+        combined = pd.concat(all_data, ignore_index=True)
+        st.dataframe(combined)
+        chart = alt.Chart(combined).mark_bar().encode(
+            x=alt.X("Faculty:N", sort="-y"),
+            y="count()",
+            color="Type:N",
+            tooltip=["Faculty", "Type", "count()"]
+        ).properties(width=900, height=400)
+        st.altair_chart(chart)
+    else:
+        st.info("No data available yet for Department Dashboard.")
