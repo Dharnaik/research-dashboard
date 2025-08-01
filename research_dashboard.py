@@ -84,7 +84,7 @@ def create_form(tab, year):
         status = st.selectbox("Status", status_dict.get(tab, []))
         status_date = st.date_input("Status Date", datetime.today())
 
-        issn = doi = volume = issue = pub_date = quartile = ""
+        issn = doi = volume = issue = pub_date = quartile = indexing = ""
         if tab == "Journal Publications" and status == "Published":
             issn = st.text_input("ISSN Number")
             doi = st.text_input("DOI Number")
