@@ -48,9 +48,9 @@ status_dict = {
     "Research Projects": ["Idea", "Submitted", "In Process of Approval", "Approved", "In Process", "Completed"],
     "Consultancy Projects": ["Idea Stage", "Submitted", "Approved", "Sanctioned", "In Process", "Completed"],
     "Patents": ["Filed", "Published", "Granted"],
-    "Project Ideas": ["Drafted", "Submitted", "Assigned to S.Y. Mini Project", "Assigned to T.Y. Mini Project", "Assigned to Final Year Project","In-Process", "Completed", "Implemented"],
+    "Project Ideas": ["Drafted", "Submitted", "Under Review", "Implemented"],
     "Conference": ["Submitted", "Accepted", "Presented"],
-    "Book / Book Chapter": ["Started Writing", "Submitted", "Accepted", "In Press", "Published"]
+    "Book / Book Chapter": ["Proposal Submitted", "Accepted", "In Press", "Published"]
 }
 
 journal_indexing = ["Scopus", "SCI", "Web of Science", "Non-Scopus"]
@@ -148,6 +148,12 @@ def create_form(tab, year):
         submit = st.form_submit_button("Submit")
 
     if submit:
+        required_cols = ["Faculty", "Academic Year", f"{tab} Title"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            st.error(f"Missing columns in the dataset: {', '.join(missing_cols)}. Please contact the admin to fix the data file.")
+            return
+
         duplicate_check = df[
             (df["Faculty"] == faculty) &
             (df["Academic Year"] == year) &
