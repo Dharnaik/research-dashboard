@@ -1,8 +1,10 @@
 # research_dashboard.py
 # Google Sheets persistence + unique widget keys + CSV download + diagnostics
+# Retry + caching to avoid 429 rate limits; cache invalidation after writes
 
 import os
 import re
+import time
 from datetime import datetime
 
 import streamlit as st
@@ -135,7 +137,7 @@ def _open_sheet(client=None):
 def _ws_name(tab: str, year: str) -> str:
     return f"{tab.replace('/', '-') }__{year}"
 
-def base_columns(tab: str) -> list[str]:
+def base_columns(tab: str):
     title_col = f"{tab} Title"
     cols = [
         "Faculty", "Academic Year", title_col, "Status", "Status Date",
@@ -145,7 +147,7 @@ def base_columns(tab: str) -> list[str]:
         cols += ["ISSN", "DOI", "Volume", "Issue", "Date of Publication", "Indexing", "Scopus Quartile"]
     return cols
 
-def _ensure_worksheet(sh, ws_title: str, cols: list[str]):
+def _ensure_worksheet(sh, ws_title: str, cols):
     try:
         ws = sh.worksheet(ws_title)
     except gspread.exceptions.WorksheetNotFound:
@@ -154,25 +156,21 @@ def _ensure_worksheet(sh, ws_title: str, cols: list[str]):
         set_with_dataframe(ws, empty, include_index=False, resize=True)
     return ws
 
-def load_df(tab: str, year: str) -> pd.DataFrame:
-    cols = base_columns(tab)
-    if USE_GSHEETS:
-        sh = _open_sheet()
-        ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
-        df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
-        if df is None:
-            return pd.DataFrame(columns=cols)
-        df = df.dropna(how="all")
-        for c in cols:
-            if c not in df.columns:
-                df[c] = ""
-        return df[cols]
-    else:
-        path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
-        if os.path.exists(path):
-            return pd.read_csv(path)
-        return pd.DataFrame(columns=cols)
+def _with_retries(fn, *args, **kwargs):
+    """Retry Google Sheets API calls on 429 with exponential backoff."""
+    delay = 0.5
+    for attempt in range(5):  # up to 5 tries
+        try:
+            return fn(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429 and attempt < 4:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
 
+@st.cache_data(ttl=120)  # cache reads for 2 min to avoid rate limits
 def load_df(tab: str, year: str) -> pd.DataFrame:
     cols = base_columns(tab)
     if USE_GSHEETS:
@@ -181,15 +179,15 @@ def load_df(tab: str, year: str) -> pd.DataFrame:
         # ensure worksheet exists with headers
         try:
             try:
-                ws = sh.worksheet(ws_title)
+                ws = _with_retries(sh.worksheet, ws_title)
             except gspread.exceptions.WorksheetNotFound:
-                ws = sh.add_worksheet(title=ws_title, rows=2000, cols=max(26, len(cols)))
+                ws = _with_retries(sh.add_worksheet, title=ws_title, rows=2000, cols=max(26, len(cols)))
                 empty = pd.DataFrame(columns=cols)
-                set_with_dataframe(ws, empty, include_index=False, resize=True)
+                _with_retries(set_with_dataframe, ws, empty, include_index=False, resize=True)
 
             # Try to read; if API hiccups, just return empty frame
             try:
-                df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+                df = _with_retries(get_as_dataframe, ws, evaluate_formulas=True, header=0)
             except gspread.exceptions.APIError:
                 return pd.DataFrame(columns=cols)
 
@@ -203,7 +201,6 @@ def load_df(tab: str, year: str) -> pd.DataFrame:
             return df[cols]
 
         except gspread.exceptions.APIError as e:
-            # Last-resort safety: don't crash the page
             status = getattr(getattr(e, "response", None), "status_code", None)
             st.warning(f"Skipping worksheet '{ws_title}' (Google Sheets status: {status}).")
             return pd.DataFrame(columns=cols)
@@ -214,6 +211,26 @@ def load_df(tab: str, year: str) -> pd.DataFrame:
             return pd.read_csv(path)
         return pd.DataFrame(columns=cols)
 
+def save_df(tab: str, year: str, df: pd.DataFrame):
+    cols = base_columns(tab)
+    df = df.copy()
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[cols]
+    if USE_GSHEETS:
+        sh = _open_sheet()
+        ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
+        set_with_dataframe(ws, df, include_index=False, resize=True)
+    else:
+        path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
+        df.to_csv(path, index=False)
+
+    # Invalidate cached reads so the UI refreshes after a write
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
 
 # -------------------- UI: FORM PER TAB -------------------- #
 def create_form(tab: str):
@@ -343,7 +360,7 @@ def create_form(tab: str):
                     save_df(tab, year_selected, df)
                     st.success("Status updated by Admin!")
 
-# -------------------- (Optional) Diagnostics -------------------- #
+# -------------------- Diagnostics (Admin only) -------------------- #
 if is_admin:
     with st.sidebar.expander("Diagnostics"):
         st.write("Service account email:")
@@ -421,4 +438,3 @@ with tabs[7]:
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data available yet for Department Dashboard.")
-
