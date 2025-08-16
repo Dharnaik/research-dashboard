@@ -110,6 +110,37 @@ def _retry_gspread(func, *args, **kwargs):
             raise
 
 @st.cache_resource
+# -------------------- GOOGLE SHEETS BACKEND -------------------- #
+USE_GSHEETS = True  # keep True on Streamlit Cloud
+
+def _normalize_sheet_key(val: str) -> str:
+    ...
+    return m.group(1) if m else val.strip()
+
+# 👉 INSERT THIS BLOCK HERE
+@st.cache_resource
+def _gs_client_cached():
+    creds = Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]),
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    return gspread.authorize(creds)
+
+# (keep this original function; we’ll stop using it)
+def _gs_client():
+    creds = Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]),
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    return gspread.authorize(creds)
+
+
 def _gs_client():
     creds = Credentials.from_service_account_info(
         dict(st.secrets["gcp_service_account"]),
@@ -122,7 +153,7 @@ def _gs_client():
 
 @st.cache_resource
 def _open_sheet_cached(sheet_key: str):
-    client = _gs_client()
+    client = _gs_client_cached()
     return _retry_gspread(client.open_by_key, sheet_key)
 
 def _open_sheet(_client_ignored=None):
@@ -415,3 +446,4 @@ with tabs[7]:
             st.info("No data available yet for Department Dashboard.")
     else:
         st.caption("Click the button to fetch data.")
+
