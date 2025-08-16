@@ -173,20 +173,47 @@ def load_df(tab: str, year: str) -> pd.DataFrame:
             return pd.read_csv(path)
         return pd.DataFrame(columns=cols)
 
-def save_df(tab: str, year: str, df: pd.DataFrame):
+def load_df(tab: str, year: str) -> pd.DataFrame:
     cols = base_columns(tab)
-    df = df.copy()
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    df = df[cols]
     if USE_GSHEETS:
         sh = _open_sheet()
-        ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
-        set_with_dataframe(ws, df, include_index=False, resize=True)
+        ws_title = _ws_name(tab, year)
+        # ensure worksheet exists with headers
+        try:
+            try:
+                ws = sh.worksheet(ws_title)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = sh.add_worksheet(title=ws_title, rows=2000, cols=max(26, len(cols)))
+                empty = pd.DataFrame(columns=cols)
+                set_with_dataframe(ws, empty, include_index=False, resize=True)
+
+            # Try to read; if API hiccups, just return empty frame
+            try:
+                df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+            except gspread.exceptions.APIError:
+                return pd.DataFrame(columns=cols)
+
+            if df is None:
+                return pd.DataFrame(columns=cols)
+
+            df = df.dropna(how="all")
+            for c in cols:
+                if c not in df.columns:
+                    df[c] = ""
+            return df[cols]
+
+        except gspread.exceptions.APIError as e:
+            # Last-resort safety: don't crash the page
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            st.warning(f"Skipping worksheet '{ws_title}' (Google Sheets status: {status}).")
+            return pd.DataFrame(columns=cols)
+
     else:
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
-        df.to_csv(path, index=False)
+        if os.path.exists(path):
+            return pd.read_csv(path)
+        return pd.DataFrame(columns=cols)
+
 
 # -------------------- UI: FORM PER TAB -------------------- #
 def create_form(tab: str):
@@ -394,3 +421,4 @@ with tabs[7]:
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data available yet for Department Dashboard.")
+
