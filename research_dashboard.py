@@ -1,17 +1,16 @@
 # research_dashboard.py
-# Persistent storage via Google Sheets + Admin edit + year handling fixes
+# Google Sheets persistence + unique widget keys + clear 403/404 diagnostics
 
 import os
+import re
 from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import altair as alt
+from fpdf import FPDF  # optional, kept for later exports
 
-# Optional import kept if you later add PDF exports
-from fpdf import FPDF  # noqa: F401
-
-# ---------- Google Sheets libraries ----------
+# Google Sheets libs
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe, get_as_dataframe
@@ -30,26 +29,24 @@ is_admin = admin_users.get(admin_email) == admin_password
 academic_years = ["2025–26", "2026–27", "2027–28"]
 DEFAULT_YEAR = "2025–26"
 
-# Local (temporary on cloud) folders for uploads
 upload_dirs = {
     "journal": "uploads/journals/",
     "research": "uploads/research/",
     "consultancy": "uploads/consultancy/",
     "patent": "uploads/patents/",
-    "ideas": "uploads/ideas/",           # <- correct mapping for Project Ideas
+    "ideas": "uploads/ideas/",
     "conference": "uploads/conference/",
-    "book": "uploads/book/"
+    "book": "uploads/book/",
 }
 for p in upload_dirs.values():
     os.makedirs(p, exist_ok=True)
 
-# Upload tab -> folder key map
 UPLOAD_KEY = {
     "Journal Publications": "journal",
     "Research Projects": "research",
     "Consultancy Projects": "consultancy",
     "Patents": "patent",
-    "Project Ideas": "ideas",            # <- fixed
+    "Project Ideas": "ideas",
     "Conference": "conference",
     "Book / Book Chapter": "book",
 }
@@ -77,7 +74,7 @@ status_dict = {
     "Project Ideas": [
         "Drafted", "Submitted", "Under Review", "Implemented",
         "S.Y Mini Project", "T.Y Mini Project", "B.Tech Project",
-        "M.Tech TRE", "M.Tech STR", "Ph.D."
+        "M.Tech TRE", "M.Tech STR", "Ph.D.",
     ],
     "Conference": ["Submitted", "Accepted", "Presented"],
     "Book / Book Chapter": ["Proposal Submitted", "Accepted", "In Press", "Published"],
@@ -90,7 +87,17 @@ def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # -------------------- GOOGLE SHEETS BACKEND -------------------- #
-USE_GSHEETS = True  # Keep True on Streamlit Cloud
+USE_GSHEETS = True  # keep True on Streamlit Cloud
+
+def _normalize_sheet_key(val: str) -> str:
+    """
+    Accept either a raw Sheet ID or a full Google Sheets URL.
+    Returns the normalized key (the ID).
+    """
+    if not val:
+        return ""
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", val)
+    return m.group(1) if m else val.strip()
 
 def _gs_client():
     creds = Credentials.from_service_account_info(
@@ -103,16 +110,39 @@ def _gs_client():
     return gspread.authorize(creds)
 
 def _open_sheet(client):
-    return client.open_by_key(st.secrets["GSHEET_ID"])
+    key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
+    if not key:
+        st.error("GSHEET_ID is missing in Secrets. Set it to your Google Sheet ID (or full URL).")
+        st.stop()
+    try:
+        return client.open_by_key(key)
+    except gspread.exceptions.APIError as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status == 404:
+            st.error("Google Sheets says: NOT FOUND (404).\n\n"
+                     "• Your GSHEET_ID is wrong OR the Sheet was deleted.\n"
+                     "• If you pasted a full URL, this app can handle it—but double-check it’s the correct Sheet.\n"
+                     "• The ID is the part between /d/ and /edit in the URL.")
+        elif status == 403:
+            st.error("Google Sheets says: PERMISSION DENIED (403).\n\n"
+                     "• Share the Sheet with the service account email:\n"
+                     "  dashboard-writer@steam-thinker-469207-r5.iam.gserviceaccount.com\n"
+                     "• Give it Editor access.\n"
+                     "• Ensure Sheets API and Drive API are enabled in your Google Cloud project.")
+        else:
+            st.error(f"Google Sheets API error (status: {status}). "
+                     "Check GSHEET_ID, sharing permissions, and API enablement.")
+        st.stop()
 
 def _ws_name(tab: str, year: str) -> str:
-    # Worksheet title "Tab__Year" (replace '/' so it's a valid title)
     return f"{tab.replace('/', '-') }__{year}"
 
 def base_columns(tab: str) -> list[str]:
     title_col = f"{tab} Title"
-    cols = ["Faculty", "Academic Year", title_col, "Status", "Status Date",
-            "Remarks", "Uploaded File", "Submitted On", "Updated On"]
+    cols = [
+        "Faculty", "Academic Year", title_col, "Status", "Status Date",
+        "Remarks", "Uploaded File", "Submitted On", "Updated On",
+    ]
     if tab == "Journal Publications":
         cols += ["ISSN", "DOI", "Volume", "Issue", "Date of Publication", "Indexing", "Scopus Quartile"]
     return cols
@@ -136,15 +166,12 @@ def load_df(tab: str, year: str) -> pd.DataFrame:
         if df is None:
             return pd.DataFrame(columns=cols)
         df = df.dropna(how="all")
-        # Ensure all expected columns exist
         for c in cols:
             if c not in df.columns:
                 df[c] = ""
-        # Preserve column order
         df = df[cols]
         return df
     else:
-        # Fallback to local CSV (non-persistent on cloud)
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
         if os.path.exists(path):
             return pd.read_csv(path)
@@ -170,13 +197,13 @@ def save_df(tab: str, year: str, df: pd.DataFrame):
 def create_form(tab: str):
     st.subheader(tab)
 
-    # Unique key per tab for this selectbox
     year_selected = st.selectbox(
         "Academic Year",
         academic_years,
         index=academic_years.index(DEFAULT_YEAR),
-        key=f"year_{tab}"
+        key=f"year_{tab}",
     )
+
     df = load_df(tab, year_selected)
 
     with st.form(f"form_{tab}"):
@@ -184,24 +211,23 @@ def create_form(tab: str):
             "Faculty Name",
             faculty_list,
             index=0,
-            key=f"faculty_{tab}"
+            key=f"faculty_{tab}",
         )
         title = st.text_input(
             f"{tab} Title",
-            key=f"title_{tab}"
+            key=f"title_{tab}",
         )
         status = st.selectbox(
             "Status",
             status_dict.get(tab, []),
-            key=f"status_{tab}"
+            key=f"status_{tab}",
         )
         status_date = st.date_input(
             "Status Date",
             datetime.today(),
-            key=f"status_date_{tab}"
+            key=f"status_date_{tab}",
         )
 
-        # Journal extras (only if Published)
         issn = doi = volume = issue = pub_date = quartile = indexing = ""
         if tab == "Journal Publications" and status == "Published":
             issn = st.text_input("ISSN Number", key=f"issn_{tab}")
@@ -211,7 +237,7 @@ def create_form(tab: str):
             pub_date = st.date_input(
                 "Date of Publication",
                 datetime.today(),
-                key=f"pubdate_{tab}"
+                key=f"pubdate_{tab}",
             ).strftime("%Y-%m-%d")
             indexing = st.selectbox("Indexing", journal_indexing, key=f"indexing_{tab}")
             if indexing == "Scopus":
@@ -221,7 +247,7 @@ def create_form(tab: str):
         doc = st.file_uploader(
             "Upload Document (optional; cloud storage is temporary)",
             type=["pdf", "docx"],
-            key=f"doc_{tab}"
+            key=f"doc_{tab}",
         )
 
         submit = st.form_submit_button("Submit", use_container_width=True)
@@ -232,14 +258,13 @@ def create_form(tab: str):
         else:
             title_col = f"{tab} Title"
             duplicate = df[
-                (df["Faculty"] == faculty) &
-                (df["Academic Year"] == year_selected) &
-                (df[title_col] == title)
+                (df["Faculty"] == faculty)
+                & (df["Academic Year"] == year_selected)
+                & (df[title_col] == title)
             ]
             if not duplicate.empty:
                 st.warning("This entry already exists for the selected academic year.")
             else:
-                # Save uploaded doc to a temporary local folder (note: not permanent on free cloud)
                 doc_name = ""
                 if doc is not None:
                     folder_key = UPLOAD_KEY.get(tab, tab.lower().split()[0])
@@ -275,7 +300,6 @@ def create_form(tab: str):
                 st.success("Entry submitted successfully!")
                 st.info("Tip: For permanent file storage, paste a Google Drive link in Remarks or integrate Drive uploads later.")
 
-    # Display & Admin edit
     if not df.empty:
         st.markdown("### All Records")
         st.dataframe(df, use_container_width=True)
@@ -287,7 +311,7 @@ def create_form(tab: str):
                 row_to_edit = st.selectbox(
                     "Select Row Index to Update",
                     row_indices,
-                    key=f"edit_index_{tab}"
+                    key=f"edit_index_{tab}",
                 )
                 if st.button("Update Selected Row Status to: Completed", key=f"admin_update_{tab}"):
                     df.at[row_to_edit, "Status"] = "Completed"
@@ -295,6 +319,21 @@ def create_form(tab: str):
                     save_df(tab, year_selected, df)
                     st.success("Status updated by Admin!")
 
+# -------------------- (Optional) Diagnostics -------------------- #
+with st.sidebar.expander("Diagnostics"):
+    st.write("Service account email:")
+    st.code(st.secrets["gcp_service_account"]["client_email"])
+    st.write("GSHEET_ID (raw):")
+    st.code(st.secrets.get("GSHEET_ID", ""))
+    st.write("GSHEET_ID (normalized):")
+    st.code(_normalize_sheet_key(st.secrets.get("GSHEET_ID", "")))
+    if st.button("Test Sheets connection", key="test_conn_btn"):
+        try:
+            client = _gs_client()
+            sh = _open_sheet(client)
+            st.success(f"OK! Worksheets: {[ws.title for ws in sh.worksheets()]}")
+        except Exception:
+            st.error("Connection failed. See error message above.")
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
@@ -338,14 +377,12 @@ with tabs[7]:
     if all_frames:
         combined = pd.concat(all_frames, ignore_index=True)
         st.dataframe(combined, use_container_width=True)
-
         chart = alt.Chart(combined).mark_bar().encode(
             x=alt.X("Faculty:N", sort="-y"),
             y="count()",
             color="Type:N",
-            tooltip=["Faculty", "Type", "count()"]
+            tooltip=["Faculty", "Type", "count()"],
         ).properties(width=900, height=420)
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data available yet for Department Dashboard.")
-
