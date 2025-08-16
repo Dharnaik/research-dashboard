@@ -1,15 +1,14 @@
 # research_dashboard.py
-# Google Sheets persistence + unique widget keys + caching/backoff + diagnostics
+# Google Sheets persistence + unique widget keys + CSV download + diagnostics
 
 import os
 import re
-import time
 from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import altair as alt
-from fpdf import FPDF  # optional, kept for future exports
+from fpdf import FPDF  # optional, kept for later exports
 
 # Google Sheets libs
 import gspread
@@ -87,29 +86,6 @@ scopus_quartiles = ["Q1", "Q2", "Q3", "Q4"]
 def get_now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# -------------------- GOOGLE SHEETS BACKEND -------------------- #
-USE_GSHEETS = True  # keep True on Streamlit Cloud
-
-def _normalize_sheet_key(val: str) -> str:
-    """Accept either a raw Sheet ID or a full Google Sheets URL; return the ID."""
-    if not val:
-        return ""
-    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", val)
-    return m.group(1) if m else val.strip()
-
-def _retry_gspread(func, *args, **kwargs):
-    """Retry gspread calls on 429 with exponential backoff."""
-    for attempt in range(5):
-        try:
-            return func(*args, **kwargs)
-        except gspread.exceptions.APIError as e:
-            status = getattr(getattr(e, "response", None), "status_code", None)
-            if status == 429 and attempt < 4:
-                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, 2s, 4s
-                continue
-            raise
-
-@st.cache_resource
 # -------------------- GOOGLE SHEETS BACKEND -------------------- #
 USE_GSHEETS = True  # keep True on Streamlit Cloud
 
@@ -276,10 +252,12 @@ def create_form(tab: str):
             st.error("Please fill all required fields (Faculty, Title, Status).")
         else:
             title_col = f"{tab} Title"
+            # Better duplicate check: ignore case & extra spaces
+            norm = lambda s: (s or "").strip().casefold()
             duplicate = df[
-                (df["Faculty"] == faculty)
-                & (df["Academic Year"] == year_selected)
-                & (df[title_col] == title)
+                (df["Faculty"].map(norm) == norm(faculty))
+                & (df["Academic Year"].map(norm) == norm(year_selected))
+                & (df[title_col].map(norm) == norm(title))
             ]
             if not duplicate.empty:
                 st.warning("This entry already exists for the selected academic year.")
@@ -338,21 +316,21 @@ def create_form(tab: str):
                     save_df(tab, year_selected, df)
                     st.success("Status updated by Admin!")
 
-# -------------------- Diagnostics (Sidebar) -------------------- #
-with st.sidebar.expander("Diagnostics"):
-    st.write("Service account email:")
-    st.code(st.secrets["gcp_service_account"]["client_email"])
-    st.write("GSHEET_ID (raw):")
-    st.code(st.secrets.get("GSHEET_ID", ""))
-    st.write("GSHEET_ID (normalized):")
-    st.code(_normalize_sheet_key(st.secrets.get("GSHEET_ID", "")))
-    if st.button("Test Sheets connection", key="test_conn_btn"):
-        try:
-            key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
-            sh = _open_sheet_cached(key)
-            st.success(f"OK! Worksheets: {[ws.title for ws in sh.worksheets()]}")
-        except Exception:
-            st.error("Connection failed. See error message above.")
+# -------------------- (Optional) Diagnostics -------------------- #
+if is_admin:
+    with st.sidebar.expander("Diagnostics"):
+        st.write("Service account email:")
+        st.code(st.secrets["gcp_service_account"]["client_email"])
+        st.write("GSHEET_ID (raw):")
+        st.code(st.secrets.get("GSHEET_ID", ""))
+        st.write("GSHEET_ID (normalized):")
+        st.code(_normalize_sheet_key(st.secrets.get("GSHEET_ID", "")))
+        if st.button("Test Sheets connection", key="test_conn_btn"):
+            try:
+                sh = _open_sheet()
+                st.success(f"OK! Worksheets: {[ws.title for ws in sh.worksheets()]}")
+            except Exception:
+                st.error("Connection failed. See error message above.")
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
@@ -382,40 +360,37 @@ with tabs[6]:
     create_form("Book / Book Chapter")
 with tabs[7]:
     st.subheader("\U0001F4CA Department Dashboard Overview")
-    if st.button("Load dashboard data", key="load_dashboard"):
-        all_frames = []
-        for tab_name in status_dict:
-            for year in academic_years:
-                tmp = load_df(tab_name, year)
-                if not tmp.empty:
-                    tmp = tmp.copy()
-                    tmp["Type"] = tab_name
-                    tmp["Academic Year"] = year
-                    all_frames.append(tmp)
 
-        if all_frames:
-            combined = pd.concat(all_frames, ignore_index=True)
-            st.dataframe(combined, use_container_width=True)
-            # ↓ One-click backup of everything
-            csv_bytes = combined.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download all data (CSV)",
-                data=csv_bytes,
-                file_name="research_dashboard_all.csv",
-                mime="text/csv",
-                key="download_all_csv"
-            )
-            chart = alt.Chart(combined).mark_bar().encode(
-                x=alt.X("Faculty:N", sort="-y"),
-                y="count()",
-                color="Type:N",
-                tooltip=["Faculty", "Type", "count()"],
-            ).properties(width=900, height=420)
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("No data available yet for Department Dashboard.")
+    all_frames = []
+    for tab_name in status_dict:
+        for year in academic_years:
+            tmp = load_df(tab_name, year)
+            if not tmp.empty:
+                tmp = tmp.copy()
+                tmp["Type"] = tab_name
+                tmp["Academic Year"] = year
+                all_frames.append(tmp)
+
+    if all_frames:
+        combined = pd.concat(all_frames, ignore_index=True)
+        st.dataframe(combined, use_container_width=True)
+
+        # ↓ One-click backup of everything
+        csv_bytes = combined.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download all data (CSV)",
+            data=csv_bytes,
+            file_name="research_dashboard_all.csv",
+            mime="text/csv",
+            key="download_all_csv"
+        )
+
+        chart = alt.Chart(combined).mark_bar().encode(
+            x=alt.X("Faculty:N", sort="-y"),
+            y="count()",
+            color="Type:N",
+            tooltip=["Faculty", "Type", "count()"],
+        ).properties(width=900, height=420)
+        st.altair_chart(chart, use_container_width=True)
     else:
-        st.caption("Click the button to fetch data.")
-
-
-
+        st.info("No data available yet for Department Dashboard.")
