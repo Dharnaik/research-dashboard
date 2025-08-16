@@ -170,31 +170,61 @@ def save_df(tab: str, year: str, df: pd.DataFrame):
 def create_form(tab: str):
     st.subheader(tab)
 
-    # Select academic year for this tab; reading/writing will use THIS year
-    year_selected = st.selectbox("Academic Year", academic_years, index=academic_years.index(DEFAULT_YEAR))
+    # Unique key per tab for this selectbox
+    year_selected = st.selectbox(
+        "Academic Year",
+        academic_years,
+        index=academic_years.index(DEFAULT_YEAR),
+        key=f"year_{tab}"
+    )
     df = load_df(tab, year_selected)
 
     with st.form(f"form_{tab}"):
-        faculty = st.selectbox("Faculty Name", faculty_list, index=0)
-        title = st.text_input(f"{tab} Title")
-        status = st.selectbox("Status", status_dict.get(tab, []))
-        status_date = st.date_input("Status Date", datetime.today())
+        faculty = st.selectbox(
+            "Faculty Name",
+            faculty_list,
+            index=0,
+            key=f"faculty_{tab}"
+        )
+        title = st.text_input(
+            f"{tab} Title",
+            key=f"title_{tab}"
+        )
+        status = st.selectbox(
+            "Status",
+            status_dict.get(tab, []),
+            key=f"status_{tab}"
+        )
+        status_date = st.date_input(
+            "Status Date",
+            datetime.today(),
+            key=f"status_date_{tab}"
+        )
 
         # Journal extras (only if Published)
         issn = doi = volume = issue = pub_date = quartile = indexing = ""
         if tab == "Journal Publications" and status == "Published":
-            issn = st.text_input("ISSN Number")
-            doi = st.text_input("DOI Number")
-            volume = st.text_input("Volume")
-            issue = st.text_input("Issue")
-            pub_date = st.date_input("Date of Publication", datetime.today()).strftime("%Y-%m-%d")
-            indexing = st.selectbox("Indexing", journal_indexing)
+            issn = st.text_input("ISSN Number", key=f"issn_{tab}")
+            doi = st.text_input("DOI Number", key=f"doi_{tab}")
+            volume = st.text_input("Volume", key=f"volume_{tab}")
+            issue = st.text_input("Issue", key=f"issue_{tab}")
+            pub_date = st.date_input(
+                "Date of Publication",
+                datetime.today(),
+                key=f"pubdate_{tab}"
+            ).strftime("%Y-%m-%d")
+            indexing = st.selectbox("Indexing", journal_indexing, key=f"indexing_{tab}")
             if indexing == "Scopus":
-                quartile = st.selectbox("Scopus Quartile", scopus_quartiles)
+                quartile = st.selectbox("Scopus Quartile", scopus_quartiles, key=f"quartile_{tab}")
 
-        remarks = st.text_area("Remarks (Optional)")
-        doc = st.file_uploader("Upload Document (optional; cloud storage is temporary)", type=["pdf", "docx"])
-        submit = st.form_submit_button("Submit")
+        remarks = st.text_area("Remarks (Optional)", key=f"remarks_{tab}")
+        doc = st.file_uploader(
+            "Upload Document (optional; cloud storage is temporary)",
+            type=["pdf", "docx"],
+            key=f"doc_{tab}"
+        )
+
+        submit = st.form_submit_button("Submit", use_container_width=True)
 
     if submit:
         if faculty == "Select Your Name" or not title or not status:
@@ -254,12 +284,17 @@ def create_form(tab: str):
             st.markdown("#### Edit Mode (Admin Only)")
             row_indices = df.index.tolist()
             if row_indices:
-                row_to_edit = st.selectbox("Select Row Index to Update", row_indices)
-                if st.button("Update Selected Row Status to: Completed"):
+                row_to_edit = st.selectbox(
+                    "Select Row Index to Update",
+                    row_indices,
+                    key=f"edit_index_{tab}"
+                )
+                if st.button("Update Selected Row Status to: Completed", key=f"admin_update_{tab}"):
                     df.at[row_to_edit, "Status"] = "Completed"
                     df.at[row_to_edit, "Updated On"] = get_now()
                     save_df(tab, year_selected, df)
                     st.success("Status updated by Admin!")
+
 
 # -------------------- TABS -------------------- #
 tabs = st.tabs([
@@ -313,3 +348,4 @@ with tabs[7]:
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data available yet for Department Dashboard.")
+
