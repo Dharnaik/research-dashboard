@@ -114,10 +114,15 @@ def _retry_gspread(func, *args, **kwargs):
 USE_GSHEETS = True  # keep True on Streamlit Cloud
 
 def _normalize_sheet_key(val: str) -> str:
-    ...
+    """
+    Accept either a raw Sheet ID or a full Google Sheets URL.
+    Returns the normalized key (the ID).
+    """
+    if not val:
+        return ""
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", val)
     return m.group(1) if m else val.strip()
 
-# 👉 INSERT THIS BLOCK HERE
 @st.cache_resource
 def _gs_client_cached():
     creds = Credentials.from_service_account_info(
@@ -129,55 +134,24 @@ def _gs_client_cached():
     )
     return gspread.authorize(creds)
 
-# (keep this original function; we’ll stop using it)
-def _gs_client():
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]),
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
-    return gspread.authorize(creds)
-
-
-def _gs_client():
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]),
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
-    return gspread.authorize(creds)
-
-@st.cache_resource
-def _open_sheet_cached(sheet_key: str):
-    client = _gs_client_cached()
-    return _retry_gspread(client.open_by_key, sheet_key)
-
-def _open_sheet(_client_ignored=None):
+def _open_sheet(client=None):
+    if client is None:
+        client = _gs_client_cached()
     key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
     if not key:
-        st.error("GSHEET_ID is missing in Secrets. Set it to your Google Sheet ID (or full URL).")
+        st.error("GSHEET_ID is missing in Secrets. Set it to your Google Sheet ID or full URL.")
         st.stop()
     try:
-        return _open_sheet_cached(key)
+        return client.open_by_key(key)
     except gspread.exceptions.APIError as e:
         status = getattr(getattr(e, "response", None), "status_code", None)
         if status == 404:
             st.error("Google Sheets says: NOT FOUND (404).\n\n"
-                     "• GSHEET_ID is wrong OR the Sheet was deleted.\n"
-                     "• You may paste a full URL or only the ID; both are supported.\n"
-                     "• The ID is the part between /d/ and /edit.")
+                     "• Wrong GSHEET_ID (or sheet deleted).\n"
+                     "• If you pasted a URL, this app accepts it—but double-check it’s correct.")
         elif status == 403:
             st.error("Google Sheets says: PERMISSION DENIED (403).\n\n"
-                     "• Share the Sheet with the service account email:\n"
-                     f"  {st.secrets['gcp_service_account']['client_email']}\n"
-                     "• Give it Editor access.\n"
-                     "• Ensure Sheets & Drive APIs are enabled.")
-        elif status == 429:
-            st.error("Google Sheets rate limit (429). Please try again in a few seconds.")
+                     "• Share the sheet with the service account email as Editor.")
         else:
             st.error(f"Google Sheets API error (status: {status}).")
         st.stop()
@@ -197,37 +171,31 @@ def base_columns(tab: str) -> list[str]:
 
 def _ensure_worksheet(sh, ws_title: str, cols: list[str]):
     try:
-        return _retry_gspread(sh.worksheet, ws_title)
+        ws = sh.worksheet(ws_title)
     except gspread.exceptions.WorksheetNotFound:
-        ws = _retry_gspread(sh.add_worksheet, title=ws_title, rows=2000, cols=max(26, len(cols)))
+        ws = sh.add_worksheet(title=ws_title, rows=2000, cols=max(26, len(cols)))
         empty = pd.DataFrame(columns=cols)
         set_with_dataframe(ws, empty, include_index=False, resize=True)
-        return ws
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _load_df_cached(sheet_key: str, ws_title: str, cols_tuple: tuple) -> pd.DataFrame:
-    """Cached read of a worksheet into a DataFrame."""
-    sh = _open_sheet_cached(sheet_key)
-    ws = _ensure_worksheet(sh, ws_title, list(cols_tuple))
-    df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
-    if df is None:
-        return pd.DataFrame(columns=list(cols_tuple))
-    df = df.dropna(how="all")
-    # ensure all expected columns
-    for c in cols_tuple:
-        if c not in df.columns:
-            df[c] = ""
-    return df[list(cols_tuple)]
+    return ws
 
 def load_df(tab: str, year: str) -> pd.DataFrame:
     cols = base_columns(tab)
     if USE_GSHEETS:
-        key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
-        ws_title = _ws_name(tab, year)
-        return _load_df_cached(key, ws_title, tuple(cols))
+        sh = _open_sheet()
+        ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
+        df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+        if df is None:
+            return pd.DataFrame(columns=cols)
+        df = df.dropna(how="all")
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
+        return df[cols]
     else:
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
-        return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame(columns=cols)
+        if os.path.exists(path):
+            return pd.read_csv(path)
+        return pd.DataFrame(columns=cols)
 
 def save_df(tab: str, year: str, df: pd.DataFrame):
     cols = base_columns(tab)
@@ -236,17 +204,10 @@ def save_df(tab: str, year: str, df: pd.DataFrame):
         if c not in df.columns:
             df[c] = ""
     df = df[cols]
-
     if USE_GSHEETS:
-        key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
-        sh = _open_sheet_cached(key)
+        sh = _open_sheet()
         ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
-        _retry_gspread(set_with_dataframe, ws, df, include_index=False, resize=True)
-        # Invalidate cached read so you see updates immediately
-        try:
-            _load_df_cached.clear()
-        except Exception:
-            pass
+        set_with_dataframe(ws, df, include_index=False, resize=True)
     else:
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
         df.to_csv(path, index=False)
@@ -455,5 +416,6 @@ with tabs[7]:
             st.info("No data available yet for Department Dashboard.")
     else:
         st.caption("Click the button to fetch data.")
+
 
 
