@@ -435,6 +435,15 @@ with tabs[7]:
         if all_frames:
             combined = pd.concat(all_frames, ignore_index=True)
             st.dataframe(combined, use_container_width=True)
+            # ↓ One-click backup of everything
+            csv_bytes = combined.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Download all data (CSV)",
+                data=csv_bytes,
+                file_name="research_dashboard_all.csv",
+                mime="text/csv",
+                key="download_all_csv"
+            )
             chart = alt.Chart(combined).mark_bar().encode(
                 x=alt.X("Faculty:N", sort="-y"),
                 y="count()",
@@ -446,4 +455,5 @@ with tabs[7]:
             st.info("No data available yet for Department Dashboard.")
     else:
         st.caption("Click the button to fetch data.")
+
 
