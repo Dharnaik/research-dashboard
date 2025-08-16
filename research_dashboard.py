@@ -1,14 +1,15 @@
 # research_dashboard.py
-# Google Sheets persistence + unique widget keys + clear 403/404 diagnostics
+# Google Sheets persistence + unique widget keys + caching/backoff + diagnostics
 
 import os
 import re
+import time
 from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import altair as alt
-from fpdf import FPDF  # optional, kept for later exports
+from fpdf import FPDF  # optional, kept for future exports
 
 # Google Sheets libs
 import gspread
@@ -90,15 +91,25 @@ def get_now():
 USE_GSHEETS = True  # keep True on Streamlit Cloud
 
 def _normalize_sheet_key(val: str) -> str:
-    """
-    Accept either a raw Sheet ID or a full Google Sheets URL.
-    Returns the normalized key (the ID).
-    """
+    """Accept either a raw Sheet ID or a full Google Sheets URL; return the ID."""
     if not val:
         return ""
     m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", val)
     return m.group(1) if m else val.strip()
 
+def _retry_gspread(func, *args, **kwargs):
+    """Retry gspread calls on 429 with exponential backoff."""
+    for attempt in range(5):
+        try:
+            return func(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 429 and attempt < 4:
+                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, 2s, 4s
+                continue
+            raise
+
+@st.cache_resource
 def _gs_client():
     creds = Credentials.from_service_account_info(
         dict(st.secrets["gcp_service_account"]),
@@ -109,29 +120,35 @@ def _gs_client():
     )
     return gspread.authorize(creds)
 
-def _open_sheet(client):
+@st.cache_resource
+def _open_sheet_cached(sheet_key: str):
+    client = _gs_client()
+    return _retry_gspread(client.open_by_key, sheet_key)
+
+def _open_sheet(_client_ignored=None):
     key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
     if not key:
         st.error("GSHEET_ID is missing in Secrets. Set it to your Google Sheet ID (or full URL).")
         st.stop()
     try:
-        return client.open_by_key(key)
+        return _open_sheet_cached(key)
     except gspread.exceptions.APIError as e:
         status = getattr(getattr(e, "response", None), "status_code", None)
         if status == 404:
             st.error("Google Sheets says: NOT FOUND (404).\n\n"
-                     "• Your GSHEET_ID is wrong OR the Sheet was deleted.\n"
-                     "• If you pasted a full URL, this app can handle it—but double-check it’s the correct Sheet.\n"
-                     "• The ID is the part between /d/ and /edit in the URL.")
+                     "• GSHEET_ID is wrong OR the Sheet was deleted.\n"
+                     "• You may paste a full URL or only the ID; both are supported.\n"
+                     "• The ID is the part between /d/ and /edit.")
         elif status == 403:
             st.error("Google Sheets says: PERMISSION DENIED (403).\n\n"
                      "• Share the Sheet with the service account email:\n"
-                     "  dashboard-writer@steam-thinker-469207-r5.iam.gserviceaccount.com\n"
+                     f"  {st.secrets['gcp_service_account']['client_email']}\n"
                      "• Give it Editor access.\n"
-                     "• Ensure Sheets API and Drive API are enabled in your Google Cloud project.")
+                     "• Ensure Sheets & Drive APIs are enabled.")
+        elif status == 429:
+            st.error("Google Sheets rate limit (429). Please try again in a few seconds.")
         else:
-            st.error(f"Google Sheets API error (status: {status}). "
-                     "Check GSHEET_ID, sharing permissions, and API enablement.")
+            st.error(f"Google Sheets API error (status: {status}).")
         st.stop()
 
 def _ws_name(tab: str, year: str) -> str:
@@ -149,33 +166,37 @@ def base_columns(tab: str) -> list[str]:
 
 def _ensure_worksheet(sh, ws_title: str, cols: list[str]):
     try:
-        ws = sh.worksheet(ws_title)
+        return _retry_gspread(sh.worksheet, ws_title)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=ws_title, rows=2000, cols=max(26, len(cols)))
+        ws = _retry_gspread(sh.add_worksheet, title=ws_title, rows=2000, cols=max(26, len(cols)))
         empty = pd.DataFrame(columns=cols)
         set_with_dataframe(ws, empty, include_index=False, resize=True)
-    return ws
+        return ws
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_df_cached(sheet_key: str, ws_title: str, cols_tuple: tuple) -> pd.DataFrame:
+    """Cached read of a worksheet into a DataFrame."""
+    sh = _open_sheet_cached(sheet_key)
+    ws = _ensure_worksheet(sh, ws_title, list(cols_tuple))
+    df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+    if df is None:
+        return pd.DataFrame(columns=list(cols_tuple))
+    df = df.dropna(how="all")
+    # ensure all expected columns
+    for c in cols_tuple:
+        if c not in df.columns:
+            df[c] = ""
+    return df[list(cols_tuple)]
 
 def load_df(tab: str, year: str) -> pd.DataFrame:
     cols = base_columns(tab)
     if USE_GSHEETS:
-        client = _gs_client()
-        sh = _open_sheet(client)
-        ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
-        df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
-        if df is None:
-            return pd.DataFrame(columns=cols)
-        df = df.dropna(how="all")
-        for c in cols:
-            if c not in df.columns:
-                df[c] = ""
-        df = df[cols]
-        return df
+        key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
+        ws_title = _ws_name(tab, year)
+        return _load_df_cached(key, ws_title, tuple(cols))
     else:
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
-        if os.path.exists(path):
-            return pd.read_csv(path)
-        return pd.DataFrame(columns=cols)
+        return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame(columns=cols)
 
 def save_df(tab: str, year: str, df: pd.DataFrame):
     cols = base_columns(tab)
@@ -184,11 +205,17 @@ def save_df(tab: str, year: str, df: pd.DataFrame):
         if c not in df.columns:
             df[c] = ""
     df = df[cols]
+
     if USE_GSHEETS:
-        client = _gs_client()
-        sh = _open_sheet(client)
+        key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
+        sh = _open_sheet_cached(key)
         ws = _ensure_worksheet(sh, _ws_name(tab, year), cols)
-        set_with_dataframe(ws, df, include_index=False, resize=True)
+        _retry_gspread(set_with_dataframe, ws, df, include_index=False, resize=True)
+        # Invalidate cached read so you see updates immediately
+        try:
+            _load_df_cached.clear()
+        except Exception:
+            pass
     else:
         path = f"data/{tab.replace(' ', '_').replace('/', '-')}_{year}.csv"
         df.to_csv(path, index=False)
@@ -319,7 +346,7 @@ def create_form(tab: str):
                     save_df(tab, year_selected, df)
                     st.success("Status updated by Admin!")
 
-# -------------------- (Optional) Diagnostics -------------------- #
+# -------------------- Diagnostics (Sidebar) -------------------- #
 with st.sidebar.expander("Diagnostics"):
     st.write("Service account email:")
     st.code(st.secrets["gcp_service_account"]["client_email"])
@@ -329,8 +356,8 @@ with st.sidebar.expander("Diagnostics"):
     st.code(_normalize_sheet_key(st.secrets.get("GSHEET_ID", "")))
     if st.button("Test Sheets connection", key="test_conn_btn"):
         try:
-            client = _gs_client()
-            sh = _open_sheet(client)
+            key = _normalize_sheet_key(st.secrets.get("GSHEET_ID", ""))
+            sh = _open_sheet_cached(key)
             st.success(f"OK! Worksheets: {[ws.title for ws in sh.worksheets()]}")
         except Exception:
             st.error("Connection failed. See error message above.")
@@ -363,26 +390,28 @@ with tabs[6]:
     create_form("Book / Book Chapter")
 with tabs[7]:
     st.subheader("\U0001F4CA Department Dashboard Overview")
+    if st.button("Load dashboard data", key="load_dashboard"):
+        all_frames = []
+        for tab_name in status_dict:
+            for year in academic_years:
+                tmp = load_df(tab_name, year)
+                if not tmp.empty:
+                    tmp = tmp.copy()
+                    tmp["Type"] = tab_name
+                    tmp["Academic Year"] = year
+                    all_frames.append(tmp)
 
-    all_frames = []
-    for tab_name in status_dict:
-        for year in academic_years:
-            tmp = load_df(tab_name, year)
-            if not tmp.empty:
-                tmp = tmp.copy()
-                tmp["Type"] = tab_name
-                tmp["Academic Year"] = year
-                all_frames.append(tmp)
-
-    if all_frames:
-        combined = pd.concat(all_frames, ignore_index=True)
-        st.dataframe(combined, use_container_width=True)
-        chart = alt.Chart(combined).mark_bar().encode(
-            x=alt.X("Faculty:N", sort="-y"),
-            y="count()",
-            color="Type:N",
-            tooltip=["Faculty", "Type", "count()"],
-        ).properties(width=900, height=420)
-        st.altair_chart(chart, use_container_width=True)
+        if all_frames:
+            combined = pd.concat(all_frames, ignore_index=True)
+            st.dataframe(combined, use_container_width=True)
+            chart = alt.Chart(combined).mark_bar().encode(
+                x=alt.X("Faculty:N", sort="-y"),
+                y="count()",
+                color="Type:N",
+                tooltip=["Faculty", "Type", "count()"],
+            ).properties(width=900, height=420)
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("No data available yet for Department Dashboard.")
     else:
-        st.info("No data available yet for Department Dashboard.")
+        st.caption("Click the button to fetch data.")
